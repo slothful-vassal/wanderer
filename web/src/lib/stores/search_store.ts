@@ -1,4 +1,6 @@
-import { env } from "$env/dynamic/public";
+import { env as pubEnv } from "$env/dynamic/public";
+import { env } from "$env/dynamic/private";
+import { version } from "$app/environment";
 import type { Actor } from "$lib/models/activitypub/actor";
 import { defaultTrailSearchAttributes, type TrailSearchResult } from "$lib/models/trail";
 import { APIError } from "$lib/util/api_util";
@@ -104,7 +106,7 @@ export async function searchTrails(q: string, options: SearchParams): Promise<Hi
 }
 
 export async function searchLocations(q: string, limit?: number): Promise<Hits<LocationSearchResult>> {
-    const nominatimURL = env.PUBLIC_NOMINATIM_URL ?? "https://nominatim.openstreetmap.org"
+    const nominatimURL = pubEnv.PUBLIC_NOMINATIM_URL ?? "https://nominatim.openstreetmap.org"
     const r = await fetch(`${nominatimURL}/search?q=${q}&format=geojson&addressdetails=1${limit ? '&limit=' + limit : ''}`, {
         method: "GET",
     });
@@ -124,9 +126,10 @@ export async function searchLocations(q: string, limit?: number): Promise<Hits<L
 }
 
 export async function searchLocationReverse(lat: number, lon: number) {
-    const nominatimURL = env.PUBLIC_NOMINATIM_URL ?? "https://nominatim.openstreetmap.org"
+    const nominatimURL = pubEnv.PUBLIC_NOMINATIM_URL ?? "https://nominatim.openstreetmap.org"
     const r = await fetch(`${nominatimURL}/reverse?lat=${lat}&lon=${lon}&format=geojson&addressdetails=1`, {
         method: "GET",
+        headers: { 'User-Agent': `${env.ORIGIN}/${version}` },
     });
     if (!r.ok) {
         const response = await r.json();
