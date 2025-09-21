@@ -17,7 +17,7 @@ export const load: Load = async ({ params, fetch, url }) => {
 
     let trail: Trail;
     if (params.id === "new") {
-        trail = new Trail("", { category: categories[0] });
+        trail = new Trail("", { category: categories[0], difficulty: undefined });
     } else {
         trail = await trails_show(params.id, undefined, url.searchParams.get("share") ?? undefined, true, fetch);
     }

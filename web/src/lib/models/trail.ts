@@ -58,7 +58,7 @@ class Trail {
             elevation_gain?: number,
             elevation_loss?: number,
             duration?: number,
-            difficulty?: "easy" | "moderate" | "difficult",
+            difficulty?: "easy" | "moderate" | "difficult" | undefined,
             lat?: number,
             lon?: number,
             thumbnail?: number,
@@ -84,7 +84,7 @@ class Trail {
         this.elevation_gain = params?.elevation_gain ?? 0;
         this.elevation_loss = params?.elevation_loss ?? 0;
         this.duration = params?.duration ?? 0;
-        this.difficulty = params?.difficulty ?? "easy";
+        this.difficulty = params?.difficulty ?? undefined;
         this.lat = params?.lat;
         this.lon = params?.lon;
         this.thumbnail = params?.thumbnail ?? 0;

@@ -175,6 +175,10 @@
                 data.trail.category ||
                 page.data.settings?.category ||
                 $categories[0].id,
+            difficulty:
+                data.trail.difficulty ||
+                page.data.settings?.difficulty ||
+                undefined,
         },
         extend: validator({
             schema: ClientTrailCreateSchema,
@@ -1342,10 +1346,12 @@
                 name="difficulty"
                 label={$_("difficulty")}
                 items={[
+                    { text: "", value: undefined },
                     { text: $_("easy"), value: "easy" },
                     { text: $_("moderate"), value: "moderate" },
                     { text: $_("difficult"), value: "difficult" },
                 ]}
+                error={$errors.difficulty ? $_("required") : ""}
             ></Select>
             <Select
                 name="category"
