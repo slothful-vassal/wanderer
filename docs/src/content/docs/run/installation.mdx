@@ -105,6 +105,31 @@ services:
       start_period: 20s
       timeout: 10s
 
+  geo:
+    container_name: wanderer-geo
+    image: flomp/wanderer-geo
+    depends_on:
+      search:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      <<: *cenv
+      PUBLIC_VALHALLA_URL: https://valhalla1.openstreetmap.de
+      PUBLIC_NOMINATIM_URL: https://nominatim.openstreetmap.org
+      ORIGIN: http://localhost:3000
+    ports:
+      - "7030:7030"
+    networks:
+      - wanderer
+    restart: unless-stopped
+    healthcheck:
+      test: wget --spider -q http://localhost:7030/health || exit 1
+      interval: 15s
+      retries: 10
+      start_period: 20s
+      timeout: 10s
+
   web:
     container_name: wanderer-web
     image: flomp/wanderer-web

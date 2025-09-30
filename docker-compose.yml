@@ -54,6 +54,8 @@ services:
     depends_on:
       search:
         condition: service_healthy
+      db:
+        condition: service_healthy
     environment:
       <<: *cenv
       PUBLIC_VALHALLA_URL: https://valhalla1.openstreetmap.de
