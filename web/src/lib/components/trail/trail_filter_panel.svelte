@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { Category } from "$lib/models/category";
     import type { TrailFilter } from "$lib/models/trail";
-    import { searchLocations } from "$lib/stores/search_store";
+    import { searchOsmLocations } from "$lib/stores/search_store";
     import { tags_index } from "$lib/stores/tag_store";
     import { currentUser } from "$lib/stores/user_store";
     import { formatDistance, formatElevation } from "$lib/util/format_util";
@@ -129,7 +129,7 @@
 
             return;
         }
-        const r = await searchLocations(q, 5);
+        const r = await searchOsmLocations(q, 5);
 
         searchDropdownItems = r.map((h) => ({
             text: h.name,

@@ -104,47 +104,30 @@ export async function searchTrails(q: string, options: SearchParams): Promise<Hi
     return response.hits
 }
 
-export async function searchLocations(q: string, limit?: number): Promise<Hits<LocationSearchResult>> {
-    const nominatimURL = env.PUBLIC_NOMINATIM_URL ?? "https://nominatim.openstreetmap.org"
-    const r = await fetch(`${nominatimURL}/search?q=${q}&format=geojson&addressdetails=1${limit ? '&limit=' + limit : ''}`, {
-        method: "GET",
-        headers: new Headers({
-            "User-Agent": "wanderer/" + version
-        })
+export async function searchOsmLocations(q: string, limit?: number) : Promise<Hits<LocationSearchResult>> {
+    const osmLinkURL = env.PUBLIC_OSM_LINK_URL ?? "http://127.0.0.1:7030"
+    const r = await fetch(`${osmLinkURL}/locations/${q}}`, {
+        method: "GET"
     });
     if (!r.ok) {
         const response = await r.json();
         throw new APIError(r.status, response.message, response.detail)
     }
-    const response: NominatimResponse = await r.json();
-    return response.features.map(f => ({
-        category: f.properties.category,
-        type: f.properties.type == "administrative" ? f.properties.addresstype : f.properties.type,
-        description: getLocationDescription(f.properties.address),
-        name: f.properties.name.length ? f.properties.name : f.properties.display_name,
-        lat: f.geometry.coordinates[1],
-        lon: f.geometry.coordinates[0],
-    }))
+
+    return r.json();
 }
 
-export async function searchLocationReverse(lat: number, lon: number) {
-    const nominatimURL = env.PUBLIC_NOMINATIM_URL ?? "https://nominatim.openstreetmap.org"
-    const r = await fetch(`${nominatimURL}/reverse?lat=${lat}&lon=${lon}&format=geojson&addressdetails=1`, {
-        method: "GET",
-        headers: new Headers({
-            "User-Agent": "wanderer/" + version
-        })
+export async function searchOsmLocationReverse(lat: number, lon: number) {
+    const osmLinkURL = env.PUBLIC_OSM_LINK_URL ?? "http://127.0.0.1:7030"
+    const r = await fetch(`${osmLinkURL}/locations/reverse?lat=${lat}&lon=${lon}}`, {
+        method: "GET"
     });
     if (!r.ok) {
         const response = await r.json();
         throw new APIError(r.status, response.message, response.detail)
     }
-    const response: NominatimResponse = await r.json();
 
-    if (response.features?.at(0)?.properties.address) {
-        return getLocationDescription(response.features[0].properties.address)
-    }
-    return ""
+    return r.json();
 }
 
 function getLocationDescription(address: Address) {
@@ -189,7 +172,7 @@ export async function searchMulti(options: MultiSearchParams): Promise<MultiSear
 
 
     if (locationQuery && locationQuery.q !== undefined && locationQuery.q !== null) {
-        const locationsResults = await searchLocations(locationQuery.q, locationQuery.limit)
+        const locationsResults = await searchOsmLocations(locationQuery.q, locationQuery.limit)
         response.results.splice(locationQueryIndex,
             0,
             { hits: locationsResults, indexUid: "locations", query: locationQuery.q, processingTimeMs: 0 }

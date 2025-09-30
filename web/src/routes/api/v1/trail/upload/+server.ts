@@ -1,7 +1,7 @@
 import GPX from "$lib/models/gpx/gpx";
 import { haversineDistance } from "$lib/models/gpx/utils";
 import type { Trail, TrailSearchResult } from "$lib/models/trail";
-import { searchLocationReverse } from "$lib/stores/search_store";
+import { searchOsmLocationReverse } from "$lib/stores/search_store";
 import { trails_create } from "$lib/stores/trail_store";
 import { handleError } from "$lib/util/api_util";
 import { fromFile, gpx2trail } from "$lib/util/gpx_util";
@@ -42,7 +42,7 @@ export async function PUT(event: RequestEvent) {
         }
 
         if (trail.lat && trail.lon) {
-            const location = await searchLocationReverse(trail.lat, trail.lon)
+            const location = await searchOsmLocationReverse(trail.lat, trail.lon)
             trail.location ??= location;
         }
 

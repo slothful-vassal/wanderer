@@ -77,8 +77,8 @@
     import { convertDMSToDD } from "$lib/models/gpx/utils.js";
     import { Tag } from "$lib/models/tag.js";
     import {
-        searchLocationReverse,
-        searchLocations,
+        searchOsmLocationReverse,
+        searchOsmLocations,
     } from "$lib/stores/search_store.js";
     import { tags_index } from "$lib/stores/tag_store.js";
     import { theme } from "$lib/stores/theme_store.js";
@@ -376,7 +376,7 @@
             });
             return;
         }
-        const r = await searchLocationReverse($formData.lat!, $formData.lon!);
+        const r = await searchOsmLocationReverse($formData.lat!, $formData.lon!);
 
         if (r) {
             setFields("location", r);
@@ -586,7 +586,7 @@
         }
 
         if ($formData.lat && $formData.lon) {
-            const r = await searchLocationReverse($formData.lat, $formData.lon);
+            const r = await searchOsmLocationReverse($formData.lat, $formData.lon);
             if (r) {
                 setFields("location", r);
             }
@@ -1072,7 +1072,7 @@
     }
 
     async function searchCities(q: string) {
-        const r = await searchLocations(q);
+        const r = await searchOsmLocations(q);
         searchDropdownItems = r.map((h) => ({
             text: h.name,
             description: h.description,

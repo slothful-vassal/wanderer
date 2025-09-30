@@ -9,7 +9,7 @@
 
     import TextField from "$lib/components/base/text_field.svelte";
     import {
-        searchLocations,
+        searchOsmLocations,
         type LocationSearchResult,
     } from "$lib/stores/search_store";
     import { settings_update } from "$lib/stores/settings_store";
@@ -47,7 +47,7 @@
     });
 
     async function searchCities(q: string) {
-        const r = await searchLocations(q, 5);
+        const r = await searchOsmLocations(q, 5);
 
         searchDropdownItems = r.map((h: LocationSearchResult) => ({
             text: h.name,
