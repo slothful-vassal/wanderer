@@ -3,10 +3,10 @@ import Track from "$lib/models/gpx/track";
 import TrackSegment from "$lib/models/gpx/track-segment";
 import { haversineDistance } from "$lib/models/gpx/utils";
 import Waypoint from "$lib/models/gpx/waypoint";
-import { type RoutingOptions, type ValhallaAnchor, type ValhallaHeightResponse, type ValhallaRouteResponse } from "$lib/models/valhalla";
+import { type RoutingOptions, type ValhallaAnchor, type ValhallaHeightResponse, type ValhallaRouteResponse, type ValhallaTraceAttributesResponse } from "$lib/models/valhalla";
 import { APIError } from "$lib/util/api_util";
-import { decodePolyline, encodePolyline } from "$lib/util/polyline_util";
-import { applyChangeset, diff, revertChangeset, type Changeset } from 'json-diff-ts';
+import { decodePolyline } from "$lib/util/polyline_util";
+import { applyChangeset, diff, type Changeset } from 'json-diff-ts';
 import type { LngLat } from "maplibre-gl";
 import { _ } from "svelte-i18n";
 import { get } from "svelte/store";
@@ -18,12 +18,33 @@ class ValhallaStore {
     anchors: ValhallaAnchor[] = $state([]);
     undoStack: { delta: Changeset, reverseDelta: Changeset }[] = $state([]);
     redoStack: { delta: Changeset, reverseDelta: Changeset }[] = $state([]);
+    surfaceSummary: Record<string, number> = $state({});
 }
 
 export const valhallaStore = new ValhallaStore();
 
+function buildSurfaceSummaryFromRoute(route: GPX): Record<string, number> {
+    const summary: Record<string, number> = {};
+
+    for (const track of route.trk ?? []) {
+        for (const segment of track.trkseg ?? []) {
+            if (!segment.trkpt?.length) {
+                continue;
+            }
+            mergeSurfaceSummaries(summary, summarizeSurfaceLengths(segment.trkpt));
+        }
+    }
+
+    return summary;
+}
+
+function recalculateSurfaceSummary() {
+    valhallaStore.surfaceSummary = buildSurfaceSummaryFromRoute(valhallaStore.route);
+}
+
 export function clearRoute() {
     valhallaStore.route = new GPX({ trk: [emtpyTrack] });
+    recalculateSurfaceSummary();
 }
 
 export function clearAnchors() {
@@ -43,6 +64,113 @@ function pushToUndoStack(delta: Changeset, reverseDelta: Changeset) {
     valhallaStore.redoStack = []
 }
 
+type ValhallaShapePoint = { lat: number; lon: number };
+
+
+const UNKNOWN_SURFACE = "unknown";
+
+function accumulateSurfaceLength(summary: Record<string, number>, surface: string | undefined, length: number) {
+    if (!Number.isFinite(length) || length <= 0) {
+        return;
+    }
+
+    const key = surface && surface.length ? surface : UNKNOWN_SURFACE;
+    summary[key] = (summary[key] ?? 0) + length;
+}
+
+function summarizeSurfaceLengths(points: Waypoint[]): Record<string, number> {
+    const summary: Record<string, number> = {};
+
+    for (let i = 1; i < points.length; i++) {
+        const previous = points[i - 1];
+        const current = points[i];
+
+        const lat1 = previous.$.lat;
+        const lon1 = previous.$.lon;
+        const lat2 = current.$.lat;
+        const lon2 = current.$.lon;
+
+        if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) {
+            continue;
+        }
+
+        const segmentLength = haversineDistance(lat1, lon1, lat2, lon2);
+        accumulateSurfaceLength(summary, current.surface ?? previous.surface, segmentLength);
+    }
+    return summary;
+}
+
+function mergeSurfaceSummaries(target: Record<string, number>, addition: Record<string, number>) {
+    for (const [surface, length] of Object.entries(addition)) {
+        if (!Number.isFinite(length) || length <= 0) {
+            continue;
+        }
+        target[surface] = (target[surface] ?? 0) + length;
+    }
+}
+
+async function fetchSurfaceTypesForShape(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<(string | undefined)[]> {
+    if (!shapePoints.length) {
+        return [];
+    }
+
+    const body = {
+        shape: shapePoints,
+        shape_match: "map_snap",
+        filters: {
+            attributes: [
+                "edge.surface",
+                "edge.begin_shape_index",
+                "edge.end_shape_index"
+            ],
+            action: "include"
+        },
+        ...(costingBody ?? {})
+    };
+
+    try {
+        const response = await fetch("/api/v1/valhalla/trace-attributes", {
+            method: "POST",
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            try {
+                const details = await response.json();
+                console.warn("Failed to retrieve surface data", details);
+            } finally { 
+                return [];
+            }
+        }
+
+        const surfaceResponse: ValhallaTraceAttributesResponse = await response.json();
+        const surfaces = Array<string | undefined>(shapePoints.length).fill(undefined);
+
+        for (const edge of surfaceResponse.edges ?? []) {
+            if (typeof edge.begin_shape_index !== "number" || typeof edge.end_shape_index !== "number") {
+                continue;
+            }
+
+            const surface = edge.surface;
+            if (!surface) {
+                continue;
+            }
+
+            const startIndex = Math.max(0, edge.begin_shape_index);
+            const endIndex = Math.min(shapePoints.length - 1, edge.end_shape_index);
+
+            for (let i = startIndex; i <= endIndex; i++) {
+                surfaces[i] = surface;
+            }
+        }
+
+        return surfaces;
+    } catch (error) {
+        console.warn("Unable to fetch Valhalla surface data", error);
+        return [];
+    }
+}
+
 
 export function setRoute(newRoute: GPX, undoable: boolean = false) {
     const delta = diff(valhallaStore.route, newRoute);
@@ -52,12 +180,14 @@ export function setRoute(newRoute: GPX, undoable: boolean = false) {
         pushToUndoStack(delta, reverseDelta)
     }
 
+    recalculateSurfaceSummary();
 }
 
-export async function calculateRouteBetween(startLat: number, startLon: number, endLat: number, endLon: number, options: RoutingOptions) {
+export async function calculateRouteBetween(startLat: number, startLon: number, endLat: number, endLon: number, options: RoutingOptions): Promise<{ waypoints: Waypoint[]; surfaceSummary: Record<string, number> }> {
+    let shapePoints: ValhallaShapePoint[] = [];
+    let duration: number = 0;
+    let surfaceTypes: (string | undefined)[] = [];
 
-    let shape;
-    let duration: number;
     if (options.autoRouting) {
         let costingBody;
         switch (options.modeOfTransport) {
@@ -74,6 +204,7 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
         }
         const requestBody = {
             "directions_type": "none",
+            "format": "osrm",
             "locations": [{ "lat": startLat, "lon": startLon }, { "lat": endLat, "lon": endLon }],
             ...costingBody
         }
@@ -86,14 +217,31 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
         }
 
         const routeResponse: ValhallaRouteResponse = await r.json();
-        shape = routeResponse.trip.legs[0].shape
-        duration = routeResponse.trip.summary.time
+
+        const rawGeometry = routeResponse.routes?.[0]?.geometry;        
+        if (typeof rawGeometry === "string") {
+            shapePoints = decodePolyline(rawGeometry).map(([lon, lat]) => ({ lat, lon }));
+            surfaceTypes = await fetchSurfaceTypesForShape(shapePoints, costingBody);
+        }
+
+        const osrmRoute = routeResponse.routes?.[0];
+        if (typeof osrmRoute?.duration === "number") {
+            duration = osrmRoute.duration;
+        }
+
     } else {
-        shape = encodePolyline([[startLat, startLon], [endLat, endLon]])
+        shapePoints = [
+            { lat: startLat, lon: startLon },
+            { lat: endLat, lon: endLon }
+        ];
         duration = 0;
     }
 
-    const r2 = await fetch("/api/v1/valhalla/height", { method: "POST", body: JSON.stringify({ encoded_polyline: shape }) })
+    if (!shapePoints.length) {
+        return { waypoints: [], surfaceSummary: {} };
+    }
+
+    const r2 = await fetch("/api/v1/valhalla/height", { method: "POST", body: JSON.stringify({ shape: shapePoints }) })
 
     if (!r2.ok) {
         const response = await r2.json();
@@ -101,12 +249,19 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
     }
 
     const heightResponse: ValhallaHeightResponse = await r2.json()
-    const points = decodePolyline(shape);
-    const startTime = new Date().getTime();
+    const startTime = Date.now();
+    const millisecondsPerPoint = shapePoints.length ? (duration * 1000) / shapePoints.length : 0;
 
-    const waypoints = points.map((p, i) => new Waypoint({ $: { lat: p[1], lon: p[0] }, ele: heightResponse.height[i], time: new Date(startTime + (((duration * 1000) / points.length) * i)) }))
+    const waypoints = shapePoints.map((point, i) => new Waypoint({
+        $: { lat: point.lat, lon: point.lon },
+        ele: heightResponse.height?.[i],
+        time: new Date(startTime + millisecondsPerPoint * i),
+        surface: surfaceTypes[i]
+    }))
 
-    return waypoints
+    const surfaceSummary = summarizeSurfaceLengths(waypoints);
+
+    return { waypoints, surfaceSummary };
 }
 
 export async function insertIntoRoute(waypoints: Waypoint[], index?: number) {
@@ -125,6 +280,7 @@ export async function insertIntoRoute(waypoints: Waypoint[], index?: number) {
     pushToUndoStack(delta, reverseDelta)
 
     valhallaStore.route.features = valhallaStore.route.getTotals();
+    recalculateSurfaceSummary();
 }
 
 export async function editRoute(index: number, waypoints: Waypoint[]) {
@@ -143,6 +299,7 @@ export async function editRoute(index: number, waypoints: Waypoint[]) {
 
 
     valhallaStore.route.features = valhallaStore.route.getTotals();
+    recalculateSurfaceSummary();
 }
 
 export function deleteFromRoute(index: number) {
@@ -155,6 +312,7 @@ export function deleteFromRoute(index: number) {
     const reverseDelta = diff(snapshot, valhallaStore.route)
     valhallaStore.route = applyChangeset(valhallaStore.route, delta);
     pushToUndoStack(delta, reverseDelta)
+    recalculateSurfaceSummary();
 }
 
 export function reverseRoute() {
@@ -190,6 +348,8 @@ export function reverseRoute() {
                 get(_)("route-point") + " #" + (i + 1);
         }
     });
+
+    recalculateSurfaceSummary();
 }
 
 export function resetRoute() {
@@ -207,6 +367,7 @@ export function resetRoute() {
     })
 
     valhallaStore.anchors = []
+    recalculateSurfaceSummary();    // Todo: verify if needed
 }
 
 export async function recalculateHeight() {
@@ -270,6 +431,7 @@ export function undo() {
 
     valhallaStore.route = applyChangeset(valhallaStore.route, historyItem.reverseDelta);
     valhallaStore.route.features = valhallaStore.route.getTotals();
+    recalculateSurfaceSummary();
 }
 
 export function redo() {
@@ -281,4 +443,5 @@ export function redo() {
 
     valhallaStore.route = applyChangeset(valhallaStore.route, historyItem.delta);
     valhallaStore.route.features = valhallaStore.route.getTotals();
+    recalculateSurfaceSummary();
 }

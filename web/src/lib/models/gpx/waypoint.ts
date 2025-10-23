@@ -15,6 +15,7 @@ export default class Waypoint {
   src?: string;
   sym?: string;
   type?: string;
+  surface?: string;
   sat?: string;
   hdop?: string;
   vdop?: string;
@@ -40,6 +41,7 @@ export default class Waypoint {
     src?: string,
     sym?: string,
     type?: string,
+    surface?: string,
     sat?: string,
     hdop?: string,
     vdop?: string,
@@ -64,6 +66,7 @@ export default class Waypoint {
     this.src = object.src;
     this.sym = object.sym;
     this.type = object.type;
+    this.surface = object.surface;
     this.sat = object.sat;
     this.hdop = object.hdop;
     this.vdop = object.vdop;
@@ -91,6 +94,7 @@ export default class Waypoint {
         desc: this.desc,
         time: this.time?.toISOString(),
         type: this.type,
+        surface: this.surface,
         sym: this.sym
       }
     };

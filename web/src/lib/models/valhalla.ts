@@ -82,8 +82,21 @@ export interface RoutingOptions {
     autoOptions?: ValhallaAutoCostingOptions
 }
 
+interface ValhallaOSRMLeg {
+    geometry?: unknown
+    shape?: unknown
+    duration?: number
+}
+
+interface ValhallaOSRMRoute {
+    geometry?: unknown
+    legs?: ValhallaOSRMLeg[]
+    duration?: number
+}
+
 interface ValhallaRouteResponse {
-    trip: Trip
+    trip?: Trip
+    routes?: ValhallaOSRMRoute[]
 }
 
 export interface Trip {
@@ -105,7 +118,17 @@ export interface Location {
 
 export interface Leg {
     summary: Summary
-    shape: string
+    shape: unknown
+}
+
+interface ValhallaTraceAttributesEdge {
+    begin_shape_index?: number
+    end_shape_index?: number
+    surface?: string
+}
+
+interface ValhallaTraceAttributesResponse {
+    edges?: ValhallaTraceAttributesEdge[]
 }
 
 export interface Summary {
@@ -133,4 +156,9 @@ interface ValhallaAnchor {
     marker?: M.Marker
 }
 
-export { type ValhallaAnchor, type ValhallaHeightResponse, type ValhallaRouteResponse };
+export {
+    type ValhallaAnchor,
+    type ValhallaHeightResponse,
+    type ValhallaRouteResponse,
+    type ValhallaTraceAttributesResponse
+};

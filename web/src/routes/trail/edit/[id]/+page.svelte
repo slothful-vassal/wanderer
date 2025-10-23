@@ -629,7 +629,7 @@
         const anchor = addAnchor(lat, lon, valhallaStore.anchors.length);
         const markerText = startAnchorLoading(anchor);
         try {
-            const routeWaypoints = await calculateRouteBetween(
+            const { waypoints: routeWaypoints } = await calculateRouteBetween(
                 previousAnchor.lat,
                 previousAnchor.lon,
                 lat,
@@ -784,23 +784,25 @@
             if (anchorIndex < valhallaStore.anchors.length - 1) {
                 const nextAnchor = valhallaStore.anchors[anchorIndex + 1];
 
-                nextRouteSegment = await calculateRouteBetween(
+                const nextResult = await calculateRouteBetween(
                     anchor.lat,
                     anchor.lon,
                     nextAnchor.lat,
                     nextAnchor.lon,
                     routingOptions,
                 );
+                nextRouteSegment = nextResult.waypoints;
             }
             if (anchorIndex > 0) {
                 const previousAnchor = valhallaStore.anchors[anchorIndex - 1];
-                previousRouteSegment = await calculateRouteBetween(
+                const previousResult = await calculateRouteBetween(
                     previousAnchor.lat,
                     previousAnchor.lon,
                     anchor.lat,
                     anchor.lon,
                     routingOptions,
                 );
+                previousRouteSegment = previousResult.waypoints;
             }
 
             if (nextRouteSegment) {
@@ -842,14 +844,14 @@
         const nextAnchor = valhallaStore.anchors[data.segment + 2];
 
         try {
-            const previousRouteSegment = await calculateRouteBetween(
+            const { waypoints: previousRouteSegment } = await calculateRouteBetween(
                 previousAnchor.lat,
                 previousAnchor.lon,
                 anchor.lat,
                 anchor.lon,
                 routingOptions,
             );
-            const nextRouteSegment = await calculateRouteBetween(
+            const { waypoints: nextRouteSegment } = await calculateRouteBetween(
                 anchor.lat,
                 anchor.lon,
                 nextAnchor.lat,
