@@ -204,72 +204,31 @@ function hasSurfaceValues(series: Array<string | undefined>): boolean {
     return series.some((value) => typeof value === "string" && value.length > 0);
 }
 
-function findClosestCoordinateIndex(
-    targetLat: number,
-    targetLon: number,
-    coordinates: Position[]
-): number | undefined {
-    let closestIndex = -1;
-    let smallestDistance = Infinity;
-
-    for (let i = 0; i < coordinates.length; i += 1) {
-        const coordinate = coordinates[i];
-        const lon = coordinate[0];
-        const lat = coordinate[1];
-
-        if (
-            typeof lat !== "number" ||
-            typeof lon !== "number" ||
-            Number.isNaN(lat) ||
-            Number.isNaN(lon)
-        ) {
-            continue;
-        }
-
-        const deltaLat = lat - targetLat;
-        const deltaLon = lon - targetLon;
-        const distance = deltaLat * deltaLat + deltaLon * deltaLon;
-
-        if (distance < smallestDistance) {
-            smallestDistance = distance;
-            closestIndex = i;
-        }
-    }
-
-    return closestIndex >= 0 ? closestIndex : undefined;
-}
-
 function computeSurfaceSeriesFromTrailSurface(
     coordinates: Position[],
     surfaceData: TrailSurface | undefined
 ): Array<string | undefined> {
-    const perPoint = surfaceData?.perPoint;
-    if (!Array.isArray(perPoint) || !perPoint.length || !coordinates.length) {
-        return [];
-    }
-
-    const breakpoints = perPoint
-        .map((entry) => {
-            const type =
-                typeof entry?.type === "string" && entry.type.length ? entry.type : undefined;
-            const lat = typeof entry?.lat === "number" ? entry.lat : undefined;
-            const lon = typeof entry?.lon === "number" ? entry.lon : undefined;
-
-            if (!type || lat === undefined || lon === undefined) {
+        
+    const breakpoints = (surfaceData?.perPoint ?? [])
+        .map((surfacePoint) => {
+            if (!surfacePoint || !surfacePoint.type || !surfacePoint.lat || !surfacePoint.lon) {
                 return null;
             }
 
-            const index = findClosestCoordinateIndex(lat, lon, coordinates);
-            if (index === undefined) {
-                return null;
+            for (let i = 0; i < coordinates.length; i++) {
+                const item = coordinates[i];
+                if (!item[1] || !item[0]) {
+                    continue;
+                }
+
+                if (item[1] == surfacePoint.lat && item[0] == surfacePoint.lon) {
+                    return { index: i, type: surfacePoint.type };
+                }
             }
 
-            return { index, type };
+            return null;
         })
-        .filter(
-            (item): item is { index: number; type: string } =>
-                item !== null && item.index >= 0
-        )
+        .filter((item): item is { index: number; type: string } => item !== null)
         .sort((a, b) => a.index - b.index);
 
     if (!breakpoints.length) {
@@ -657,7 +616,6 @@ export class ElevationProfile {
     private surfaceGradient?: CanvasGradient;
     private surfaceGradientWidth?: number;
     private surfaceGradientHeight?: number;
-    //private surfaceGradientKey?: string;
 
 
     constructor(
@@ -1119,8 +1077,7 @@ export class ElevationProfile {
         if (
             !this.surfaceGradient ||
             this.surfaceGradientWidth !== chartWidth ||
-            this.surfaceGradientHeight !== chartHeight/* ||
-            this.surfaceGradientKey !== signature*/
+            this.surfaceGradientHeight !== chartHeight
         ) {
             const ctx = context.chart.ctx;
             const gradient = ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0);
@@ -1145,7 +1102,6 @@ export class ElevationProfile {
             this.surfaceGradient = gradient;
             this.surfaceGradientWidth = chartWidth;
             this.surfaceGradientHeight = chartHeight;
-            //this.surfaceGradientKey = signature;
         }
 
         return this.surfaceGradient ?? fallbackColor;
@@ -1248,7 +1204,6 @@ export class ElevationProfile {
             ...options,
         };
         this.surfaceGradient = undefined;
-        //this.surfaceGradientKey = undefined;
         this.surfaceGradientWidth = undefined;
         this.surfaceGradientHeight = undefined;
         this.chart.data.datasets[0].backgroundColor = (context) => this.colorFromSurfaceType(context);
@@ -1272,7 +1227,6 @@ export class ElevationProfile {
 
         this.times = times;
         this.surfaceGradient = undefined;
-        //this.surfaceGradientKey = undefined;
         this.surfaceGradientWidth = undefined;
         this.surfaceGradientHeight = undefined;
 

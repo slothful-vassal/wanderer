@@ -20,7 +20,6 @@ class ValhallaStore {
     undoStack: { delta: Changeset, reverseDelta: Changeset }[] = $state([]);
     redoStack: { delta: Changeset, reverseDelta: Changeset }[] = $state([]);
     surface: TrailSurface = $state({});
-    //surfaceSummary: Record<string, number> = $state({});
 }
 
 export const valhallaStore = new ValhallaStore();
@@ -276,7 +275,6 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
 
 export async function insertIntoRoute(waypoints: Waypoint[], index?: number) {
     const snapshot = new GPX({ ...valhallaStore.route })
-console.error(waypoints)
     const segment = new TrackSegment({ trkpt: waypoints })
 
     if (index) {
@@ -289,7 +287,6 @@ console.error(waypoints)
 
     const reverseDelta = diff(snapshot, valhallaStore.route);
     valhallaStore.route = applyChangeset(valhallaStore.route, delta);
-console.warn(valhallaStore.route)
     pushToUndoStack(delta, reverseDelta)
 
     valhallaStore.route.features = valhallaStore.route.getTotals();

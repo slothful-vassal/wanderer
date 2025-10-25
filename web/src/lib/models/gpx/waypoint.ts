@@ -66,7 +66,6 @@ export default class Waypoint {
     this.src = object.src;
     this.sym = object.sym;
     this.type = object.type;
-    //this.surface = object.surface;
     this.setSurface(object.surface);
     this.sat = object.sat;
     this.hdop = object.hdop;
