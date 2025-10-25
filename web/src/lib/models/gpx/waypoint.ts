@@ -66,7 +66,8 @@ export default class Waypoint {
     this.src = object.src;
     this.sym = object.sym;
     this.type = object.type;
-    this.surface = object.surface;
+    //this.surface = object.surface;
+    this.setSurface(object.surface);
     this.sat = object.sat;
     this.hdop = object.hdop;
     this.vdop = object.vdop;
@@ -80,6 +81,15 @@ export default class Waypoint {
       }
       this.link = object.link.map(l => new Link(l));
     }
+  }
+
+  setSurface(surface?: string) {
+    Object.defineProperty(this, "surface", {
+      value: surface,
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
   }
 
   toGeoJSON(): GeoJSON.Feature {

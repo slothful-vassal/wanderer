@@ -8,6 +8,17 @@ import type { TrailLike } from "./trail_like";
 import type { TrailShare } from "./trail_share";
 import type { Waypoint } from "./waypoint";
 
+type TrailSurface = {
+    perPoint?: TrailSurfacePoint[];
+    summary?: Record<string, number>;
+};
+
+type TrailSurfacePoint = {
+    lat?: number;
+    lon?: number;
+    type?: string;
+}
+
 class Trail {
     id?: string;
     name: string;
@@ -26,6 +37,7 @@ class Trail {
     gpx?: string;
     created?: string;
     updated?: string;
+    surface?: TrailSurface;
     category?: string;
     tags: string[];
     polyline?: string;
@@ -71,7 +83,8 @@ class Trail {
             shares?: TrailShare[],
             tags?: string[],
             description?: string
-            created?: string
+            created?: string,
+            surface?: TrailSurface
         }
 
     ) {
@@ -89,6 +102,7 @@ class Trail {
         this.lon = params?.lon;
         this.thumbnail = params?.thumbnail ?? 0;
         this.photos = params?.photos ?? [];
+        this.surface = params?.surface;
         this.tags = []
         this.gpx = params?.gpx;
         this.like_count = 0
@@ -218,5 +232,12 @@ export const defaultTrailSearchAttributes = [
 
 export { Trail };
 
-export type { TrailBoundingBox, TrailFilter, TrailFilterValues, TrailSearchResult };
+export type {
+    TrailBoundingBox,
+    TrailFilter,
+    TrailFilterValues,
+    TrailSearchResult,
+    TrailSurface,
+    TrailSurfacePoint,
+};
 

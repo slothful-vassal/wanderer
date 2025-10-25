@@ -17,6 +17,7 @@ import { haversineDistance } from "$lib/models/gpx/utils";
 import type { Waypoint } from "$lib/models/waypoint";
 import { formatTimeHHMM } from "$lib/util/format_util";
 import { haversineCumulatedDistanceWgs84, smoothElevations } from "./tools";
+import type { TrailSurface } from "$lib/models/trail";
 
 const FEET_PER_METER = 3.28084;
 const MILES_PER_METER = 0.000621371;
@@ -197,6 +198,98 @@ function extractSeriesForIndex(
     }
 
     return collection as CoordinateSeries;
+}
+
+function hasSurfaceValues(series: Array<string | undefined>): boolean {
+    return series.some((value) => typeof value === "string" && value.length > 0);
+}
+
+function findClosestCoordinateIndex(
+    targetLat: number,
+    targetLon: number,
+    coordinates: Position[]
+): number | undefined {
+    let closestIndex = -1;
+    let smallestDistance = Infinity;
+
+    for (let i = 0; i < coordinates.length; i += 1) {
+        const coordinate = coordinates[i];
+        const lon = coordinate[0];
+        const lat = coordinate[1];
+
+        if (
+            typeof lat !== "number" ||
+            typeof lon !== "number" ||
+            Number.isNaN(lat) ||
+            Number.isNaN(lon)
+        ) {
+            continue;
+        }
+
+        const deltaLat = lat - targetLat;
+        const deltaLon = lon - targetLon;
+        const distance = deltaLat * deltaLat + deltaLon * deltaLon;
+
+        if (distance < smallestDistance) {
+            smallestDistance = distance;
+            closestIndex = i;
+        }
+    }
+
+    return closestIndex >= 0 ? closestIndex : undefined;
+}
+
+function computeSurfaceSeriesFromTrailSurface(
+    coordinates: Position[],
+    surfaceData: TrailSurface | undefined
+): Array<string | undefined> {
+    const perPoint = surfaceData?.perPoint;
+    if (!Array.isArray(perPoint) || !perPoint.length || !coordinates.length) {
+        return [];
+    }
+
+    const breakpoints = perPoint
+        .map((entry) => {
+            const type =
+                typeof entry?.type === "string" && entry.type.length ? entry.type : undefined;
+            const lat = typeof entry?.lat === "number" ? entry.lat : undefined;
+            const lon = typeof entry?.lon === "number" ? entry.lon : undefined;
+
+            if (!type || lat === undefined || lon === undefined) {
+                return null;
+            }
+
+            const index = findClosestCoordinateIndex(lat, lon, coordinates);
+            if (index === undefined) {
+                return null;
+            }
+
+            return { index, type };
+        })
+        .filter(
+            (item): item is { index: number; type: string } =>
+                item !== null && item.index >= 0
+        )
+        .sort((a, b) => a.index - b.index);
+
+    if (!breakpoints.length) {
+        return [];
+    }
+
+    const series = Array<string | undefined>(coordinates.length).fill(undefined);
+    let currentType: string | undefined;
+    let cursor = 0;
+
+    for (let i = 0; i < series.length; i += 1) {
+        while (cursor < breakpoints.length && i >= breakpoints[cursor].index) {
+            currentType = breakpoints[cursor].type;
+            cursor += 1;
+        }
+
+        series[i] = currentType;
+    }
+
+    return series;
 }
 
 function getValueAt(series: CoordinateSeries | undefined, index: number) {
@@ -978,11 +1071,16 @@ export class ElevationProfile {
 
     colorFromSurfaceType(context: ScriptableContext<"line">) {
         const fallbackColor = this.settings.profileBackgroundColor ?? DEFAULT_SURFACE_COLOR;
-        const sampleCount = Math.min(this.surfaces.length, this.cumulatedDistance.length);
 
         if (context.type !== "dataset") {
             return fallbackColor;
         }
+
+        if (!hasSurfaceValues(this.surfaces)) {
+            return fallbackColor;
+        }
+
+        const sampleCount = Math.min(this.surfaces.length, this.cumulatedDistance.length);
 
         const chartArea = context.chart.chartArea;
         if (!chartArea || sampleCount === 0) {
@@ -1154,7 +1252,8 @@ export class ElevationProfile {
         this.surfaceGradientWidth = undefined;
         this.surfaceGradientHeight = undefined;
         this.chart.data.datasets[0].backgroundColor = (context) => this.colorFromSurfaceType(context);
-        this.chart.data.datasets[0].fill = this.surfaces.length > 0 || !!this.settings.profileBackgroundColor;
+        this.chart.data.datasets[0].fill =
+            hasSurfaceValues(this.surfaces) || !!this.settings.profileBackgroundColor;
         this.chart.options.scales!.x!.ticks!.color = this.settings.labelColor;
 
         this.chart.options.scales!.y!.grid!.color = this.settings.elevationGridColor;
@@ -1166,9 +1265,10 @@ export class ElevationProfile {
         this.chart.update();
     }
 
-    async setData(data: GeoJsonObject, waypoints?: Waypoint[]) {
+    async setData(data: GeoJsonObject, waypoints?: Waypoint[], surface?: TrailSurface | undefined) {
         // Concatenates the positions that may come from multiple LineStrings or MultiLineString
         const { positions, times, surfaces } = geoJsonObjectToPositionsTimesAndSurfaces(data);
+        const computedSurfaces = computeSurfaceSeriesFromTrailSurface(positions, surface);
 
         this.times = times;
         this.surfaceGradient = undefined;
@@ -1206,9 +1306,15 @@ export class ElevationProfile {
         this.grade = [];
         this.waypoints = waypoints ?? [];
         this.waypointPositions = [];
-        this.surfaces = surfaces;
+        const selectedSurfaces = hasSurfaceValues(surfaces)
+            ? surfaces
+            : hasSurfaceValues(computedSurfaces)
+                ? computedSurfaces
+                : [];
+        this.surfaces = selectedSurfaces;
         this.chart.data.datasets[0].backgroundColor = (context) => this.colorFromSurfaceType(context);
-        this.chart.data.datasets[0].fill = this.surfaces.length > 0 || !!this.settings.profileBackgroundColor;
+        const hasSurfaceData = hasSurfaceValues(this.surfaces);
+        this.chart.data.datasets[0].fill = hasSurfaceData || !!this.settings.profileBackgroundColor;
 
         let cumulatedDPlus = 0;
         let cumulatedTime = 0;

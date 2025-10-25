@@ -1,6 +1,6 @@
 import type { SummitLog } from "$lib/models/summit_log";
 import type { Tag } from "$lib/models/tag";
-import { defaultTrailSearchAttributes, Trail, type TrailFilter, type TrailFilterValues, type TrailSearchResult } from "$lib/models/trail";
+import { defaultTrailSearchAttributes, Trail, type TrailFilter, type TrailFilterValues, type TrailSearchResult, type TrailSurface } from "$lib/models/trail";
 import type { Waypoint } from "$lib/models/waypoint";
 import { APIError } from "$lib/util/api_util";
 import { deepEqual } from "$lib/util/deep_util";
@@ -197,7 +197,11 @@ export async function trails_create(trail: Trail, photos: File[], gpx: File | Bl
 
     trail.author = user.actor
 
-    const formData = objectToFormData(trail)
+    const formData = objectToFormData(trail, ["surface"])
+
+    if (trail.surface) {
+        formData.set("surface", JSON.stringify(trail.surface));
+    }
 
     if (gpx) {
         formData.set("gpx", gpx);
@@ -295,7 +299,13 @@ export async function trails_update(oldTrail: Trail, newTrail: Trail, photos?: F
         newTrail.tags = newTrail.tags.filter(t => t != tag.id);
     }
 
-    const formData = objectToFormData(newTrail, ["expand"])
+    const formData = objectToFormData(newTrail, ["expand", "surface"])
+
+    if (newTrail.surface) {
+        formData.set("surface", JSON.stringify(newTrail.surface));
+    } else if (oldTrail.surface) {
+        formData.set("surface", JSON.stringify({}));
+    }
 
     if (gpx) {
         formData.append("gpx", gpx);
@@ -628,3 +638,78 @@ function compareObjectArrays<T extends { id?: string }>(oldArray: T[], newArray:
         unchanged: unchangedObjects,
     };
 }
+
+/*function normalizeTrailSurface(surface: unknown): TrailSurface | undefined {
+    if (surface === null || surface === undefined) {
+        return undefined;
+    }
+
+    let parsed = surface;
+    if (typeof surface === "string" && surface.length) {
+        try {
+            parsed = JSON.parse(surface);
+        } catch (error) {
+            console.warn("Unable to parse surface payload", error);
+            return undefined;
+        }
+    }
+
+    if (typeof parsed !== "object" || parsed === null) {
+        return undefined;
+    }
+
+    const source = parsed as Record<string, unknown>;
+
+    let perPoint: TrailSurface["perPoint"];
+    if (Array.isArray(source.perPoint)) {
+        const entries = source.perPoint
+            .map((entry) => {
+                if (!entry) {
+                    return null;
+                }
+                if (typeof entry === "object") {
+                    const obj = entry as Record<string, unknown>;
+                    const type = typeof obj.type === "string" && obj.type.length ? obj.type : undefined;
+                    const lat = typeof obj.lat === "number" ? obj.lat : undefined;
+                    const lon = typeof obj.lon === "number" ? obj.lon : undefined;
+                    if (type && typeof lat === "number" && typeof lon === "number") {
+                        return { lat, lon, type };
+                    }
+                    return null;
+                }
+                if (typeof entry === "string" && entry.length) {
+                    return { type: entry };
+                }
+                return null;
+            })
+            .filter((item): item is NonNullable<TrailSurface["perPoint"]>[number] => item !== null);
+        if (entries.length) {
+            perPoint = entries;
+        }
+    }
+
+    let summary: Record<string, number> | undefined;
+    if (typeof source.summary === "object" && source.summary !== null) {
+        summary = {};
+        for (const [key, value] of Object.entries(source.summary as Record<string, unknown>)) {
+            const numeric = Number(value);
+            if (!Number.isNaN(numeric)) {
+                summary[key] = numeric;
+            }
+        }
+        if (Object.keys(summary).length === 0) {
+            summary = undefined;
+        }
+    }
+
+    if (!perPoint && !summary) {
+        return undefined;
+    }
+
+    return { perPoint, summary };
+}
+
+function normalizeTrailRecord(record: Trail): Trail {
+    (record as any).surface = normalizeTrailSurface((record as any).surface);
+    return record;
+}*/

@@ -3,6 +3,7 @@ import Track from "$lib/models/gpx/track";
 import TrackSegment from "$lib/models/gpx/track-segment";
 import { haversineDistance } from "$lib/models/gpx/utils";
 import Waypoint from "$lib/models/gpx/waypoint";
+import type { TrailSurface } from "$lib/models/trail";
 import { type RoutingOptions, type ValhallaAnchor, type ValhallaHeightResponse, type ValhallaRouteResponse, type ValhallaTraceAttributesResponse } from "$lib/models/valhalla";
 import { APIError } from "$lib/util/api_util";
 import { decodePolyline } from "$lib/util/polyline_util";
@@ -18,12 +19,14 @@ class ValhallaStore {
     anchors: ValhallaAnchor[] = $state([]);
     undoStack: { delta: Changeset, reverseDelta: Changeset }[] = $state([]);
     redoStack: { delta: Changeset, reverseDelta: Changeset }[] = $state([]);
-    surfaceSummary: Record<string, number> = $state({});
+    surface: TrailSurface = $state({});
+    //surfaceSummary: Record<string, number> = $state({});
 }
 
 export const valhallaStore = new ValhallaStore();
 
-function buildSurfaceSummaryFromRoute(route: GPX): Record<string, number> {
+function buildSurfaceFromRoute(route: GPX): TrailSurface {
+    const surface: TrailSurface = {};
     const summary: Record<string, number> = {};
 
     for (const track of route.trk ?? []) {
@@ -32,50 +35,19 @@ function buildSurfaceSummaryFromRoute(route: GPX): Record<string, number> {
                 continue;
             }
             mergeSurfaceSummaries(summary, summarizeSurfaceLengths(segment.trkpt));
+
+            if (!surface.perPoint) {
+                surface.perPoint = [];
+            }
+            segment.trkpt.forEach((t) => {
+                surface.perPoint?.push({lat: t.$.lat, lon: t.$.lon});
+            });
         }
     }
 
-    return summary;
-}
+    surface.summary = summary;
 
-function recalculateSurfaceSummary() {
-    valhallaStore.surfaceSummary = buildSurfaceSummaryFromRoute(valhallaStore.route);
-}
-
-export function clearRoute() {
-    valhallaStore.route = new GPX({ trk: [emtpyTrack] });
-    recalculateSurfaceSummary();
-}
-
-export function clearAnchors() {
-    for (const anchor of valhallaStore.anchors) {
-        anchor.marker?.remove();
-    }
-    valhallaStore.anchors = [];
-}
-
-export function clearUndoRedoStack() {
-    valhallaStore.undoStack = []
-    valhallaStore.redoStack = []
-}
-
-function pushToUndoStack(delta: Changeset, reverseDelta: Changeset) {
-    valhallaStore.undoStack.push({ delta, reverseDelta })
-    valhallaStore.redoStack = []
-}
-
-type ValhallaShapePoint = { lat: number; lon: number };
-
-
-const UNKNOWN_SURFACE = "unknown";
-
-function accumulateSurfaceLength(summary: Record<string, number>, surface: string | undefined, length: number) {
-    if (!Number.isFinite(length) || length <= 0) {
-        return;
-    }
-
-    const key = surface && surface.length ? surface : UNKNOWN_SURFACE;
-    summary[key] = (summary[key] ?? 0) + length;
+    return surface;
 }
 
 function summarizeSurfaceLengths(points: Waypoint[]): Record<string, number> {
@@ -107,6 +79,46 @@ function mergeSurfaceSummaries(target: Record<string, number>, addition: Record<
         }
         target[surface] = (target[surface] ?? 0) + length;
     }
+}
+
+function setSurface() {
+    valhallaStore.surface = buildSurfaceFromRoute(valhallaStore.route);
+}
+
+export function clearRoute() {
+    valhallaStore.route = new GPX({ trk: [emtpyTrack] });
+    setSurface();
+}
+
+export function clearAnchors() {
+    for (const anchor of valhallaStore.anchors) {
+        anchor.marker?.remove();
+    }
+    valhallaStore.anchors = [];
+}
+
+export function clearUndoRedoStack() {
+    valhallaStore.undoStack = []
+    valhallaStore.redoStack = []
+}
+
+function pushToUndoStack(delta: Changeset, reverseDelta: Changeset) {
+    valhallaStore.undoStack.push({ delta, reverseDelta })
+    valhallaStore.redoStack = []
+}
+
+type ValhallaShapePoint = { lat: number; lon: number };
+
+
+const UNKNOWN_SURFACE = "unknown";
+
+function accumulateSurfaceLength(summary: Record<string, number>, surface: string | undefined, length: number) {
+    if (!Number.isFinite(length) || length <= 0) {
+        return;
+    }
+
+    const key = surface && surface.length ? surface : UNKNOWN_SURFACE;
+    summary[key] = (summary[key] ?? 0) + length;
 }
 
 async function fetchSurfaceTypesForShape(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<(string | undefined)[]> {
@@ -180,10 +192,10 @@ export function setRoute(newRoute: GPX, undoable: boolean = false) {
         pushToUndoStack(delta, reverseDelta)
     }
 
-    recalculateSurfaceSummary();
+    setSurface();
 }
 
-export async function calculateRouteBetween(startLat: number, startLon: number, endLat: number, endLon: number, options: RoutingOptions): Promise<{ waypoints: Waypoint[]; surfaceSummary: Record<string, number> }> {
+export async function calculateRouteBetween(startLat: number, startLon: number, endLat: number, endLon: number, options: RoutingOptions): Promise<{ waypoints: Waypoint[] }> {
     let shapePoints: ValhallaShapePoint[] = [];
     let duration: number = 0;
     let surfaceTypes: (string | undefined)[] = [];
@@ -238,7 +250,7 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
     }
 
     if (!shapePoints.length) {
-        return { waypoints: [], surfaceSummary: {} };
+        return { waypoints: [] };
     }
 
     const r2 = await fetch("/api/v1/valhalla/height", { method: "POST", body: JSON.stringify({ shape: shapePoints }) })
@@ -259,13 +271,12 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
         surface: surfaceTypes[i]
     }))
 
-    const surfaceSummary = summarizeSurfaceLengths(waypoints);
-
-    return { waypoints, surfaceSummary };
+    return { waypoints };
 }
 
 export async function insertIntoRoute(waypoints: Waypoint[], index?: number) {
     const snapshot = new GPX({ ...valhallaStore.route })
+console.error(waypoints)
     const segment = new TrackSegment({ trkpt: waypoints })
 
     if (index) {
@@ -275,12 +286,14 @@ export async function insertIntoRoute(waypoints: Waypoint[], index?: number) {
     }
 
     const delta = diff(valhallaStore.route, snapshot);
+
     const reverseDelta = diff(snapshot, valhallaStore.route);
     valhallaStore.route = applyChangeset(valhallaStore.route, delta);
+console.warn(valhallaStore.route)
     pushToUndoStack(delta, reverseDelta)
 
     valhallaStore.route.features = valhallaStore.route.getTotals();
-    recalculateSurfaceSummary();
+    setSurface();
 }
 
 export async function editRoute(index: number, waypoints: Waypoint[]) {
@@ -299,7 +312,7 @@ export async function editRoute(index: number, waypoints: Waypoint[]) {
 
 
     valhallaStore.route.features = valhallaStore.route.getTotals();
-    recalculateSurfaceSummary();
+    setSurface();
 }
 
 export function deleteFromRoute(index: number) {
@@ -312,7 +325,7 @@ export function deleteFromRoute(index: number) {
     const reverseDelta = diff(snapshot, valhallaStore.route)
     valhallaStore.route = applyChangeset(valhallaStore.route, delta);
     pushToUndoStack(delta, reverseDelta)
-    recalculateSurfaceSummary();
+    setSurface();
 }
 
 export function reverseRoute() {
@@ -349,7 +362,7 @@ export function reverseRoute() {
         }
     });
 
-    recalculateSurfaceSummary();
+    setSurface();
 }
 
 export function resetRoute() {
@@ -367,7 +380,7 @@ export function resetRoute() {
     })
 
     valhallaStore.anchors = []
-    recalculateSurfaceSummary();    // Todo: verify if needed
+    setSurface();    // Todo: verify if needed
 }
 
 export async function recalculateHeight() {
@@ -431,7 +444,7 @@ export function undo() {
 
     valhallaStore.route = applyChangeset(valhallaStore.route, historyItem.reverseDelta);
     valhallaStore.route.features = valhallaStore.route.getTotals();
-    recalculateSurfaceSummary();
+    setSurface();
 }
 
 export function redo() {
@@ -443,5 +456,5 @@ export function redo() {
 
     valhallaStore.route = applyChangeset(valhallaStore.route, historyItem.delta);
     valhallaStore.route.features = valhallaStore.route.getTotals();
-    recalculateSurfaceSummary();
+    setSurface();
 }
