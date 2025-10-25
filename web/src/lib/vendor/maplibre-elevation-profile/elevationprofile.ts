@@ -8,7 +8,7 @@ import type {
     Position,
 } from "geojson";
 
-import { Chart, registerables } from "chart.js";
+import { Chart, registerables, type ScriptableContext } from "chart.js";
 import zoomPlugin from "chartjs-plugin-zoom";
 // @ts-ignore
 import { CrosshairPlugin } from "chartjs-plugin-crosshair";
@@ -23,25 +23,133 @@ const MILES_PER_METER = 0.000621371;
 const KILOMETERS_HOUR_PER_METER_SECOND = 3.6
 const MILES_HOUR_PER_METER_SECOND = 2.23694
 
-function extractLineStrings(
-    geoJson: GeoJsonObject
-): { lineStrings: Array<LineString | MultiLineString>, times: Date[] } {
-    const lineStrings: Array<LineString | MultiLineString> = [];
-    const times: Date[] = [];
+const DEFAULT_SURFACE_COLOR = "rgba(107, 114, 128, 0.3)";
 
-    function extractFromGeometry(geometry: GeometryObject) {
+enum SurfaceGroup {
+    "pavement",
+    "cobblestone",
+    "gravel",
+    "path",
+    "unknown",
+}
+
+const SURFACE_COLOR_CACHE = new Map<string, string>();
+
+function hashToHue(value: string): number {
+    let hash = 0;
+    for (let i = 0; i < value.length; i++) {
+        hash = (hash << 5) - hash + value.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash) % 360;
+}
+
+function colorFromHue(hue: number): string {
+    return `hsla(${hue}, 60%, 55%, 0.35)`;
+}
+
+const SURFACE_GROUP_MAP: Record<string, SurfaceGroup> = {
+    "asphalt": SurfaceGroup.pavement,
+    "concrete": SurfaceGroup.pavement,
+    "paved": SurfaceGroup.pavement,
+    "paved_smooth": SurfaceGroup.pavement,
+    "paved_rough": SurfaceGroup.pavement,
+    "paving_stones": SurfaceGroup.pavement,
+    "cobblestone": SurfaceGroup.cobblestone,
+    "brick": SurfaceGroup.cobblestone,
+    "metal": SurfaceGroup.unknown,
+    "wood": SurfaceGroup.unknown,
+    "boardwalk": SurfaceGroup.unknown,
+    "compacted": SurfaceGroup.gravel,
+    "hardpack": SurfaceGroup.gravel,
+    "fine_gravel": SurfaceGroup.gravel,
+    "gravel": SurfaceGroup.gravel,
+    "dirt": SurfaceGroup.path,
+    "ground": SurfaceGroup.path,
+    "earth": SurfaceGroup.path,
+    "trail": SurfaceGroup.path,
+    "path": SurfaceGroup.path,
+    "mud": SurfaceGroup.path,
+    "sand": SurfaceGroup.unknown,
+    "grass": SurfaceGroup.unknown,
+    "artificial_turf": SurfaceGroup.unknown,
+    "snow": SurfaceGroup.unknown,
+    "ice": SurfaceGroup.unknown,
+    "unknown": SurfaceGroup.unknown,
+}
+
+const SURFACE_COLOR_MAP: Record<SurfaceGroup, string> = {
+    [SurfaceGroup.pavement]: "rgba(2, 136, 209, 0.35)",
+    [SurfaceGroup.cobblestone]: "rgba(57, 73, 171, 0.35)",
+    [SurfaceGroup.gravel]: "rgba(174, 213, 129, 0.35)",
+    [SurfaceGroup.path]: "rgba(161, 136, 93, 0.35)",
+    [SurfaceGroup.unknown]: DEFAULT_SURFACE_COLOR,
+};
+
+function normalizeSurfaceName(surface: string): string {
+    return surface.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function getSurfaceColor(surface?: string, fallbackColor?: string): string {
+    fallbackColor = fallbackColor ?? DEFAULT_SURFACE_COLOR;
+    if (!surface) {
+        return fallbackColor;
+    }
+
+    const normalized = normalizeSurfaceName(surface);
+    const surfaceGroup = SURFACE_GROUP_MAP[normalized];
+    if (surfaceGroup !== undefined) {
+        const surfaceColor = SURFACE_COLOR_MAP[surfaceGroup];
+        if (surfaceColor) {
+            return surfaceColor;
+        }
+    }
+
+    let cached = SURFACE_COLOR_CACHE.get(normalized);
+    if (!cached) {
+        cached = colorFromHue(hashToHue(normalized));
+        SURFACE_COLOR_CACHE.set(normalized, cached);
+    }
+    return cached;
+}
+
+type CoordinateSeries = Array<string | null | undefined>;
+type CoordinateSeriesCollection = CoordinateSeries | CoordinateSeries[] | undefined;
+
+type ExtractedSegment = {
+    geometry: LineString | MultiLineString;
+    times?: CoordinateSeriesCollection;
+    surfaces?: CoordinateSeriesCollection;
+};
+
+function extractLineStrings(geoJson: GeoJsonObject): ExtractedSegment[] {
+    const segments: ExtractedSegment[] = [];
+
+    function extractFromGeometry(
+        geometry: GeometryObject,
+        metadata?: { times?: CoordinateSeriesCollection; surfaces?: CoordinateSeriesCollection }
+    ) {
         if (geometry.type === "LineString" || geometry.type === "MultiLineString") {
-            lineStrings.push(geometry as LineString | MultiLineString);
+            segments.push({
+                geometry: geometry as LineString | MultiLineString,
+                times: metadata?.times,
+                surfaces: metadata?.surfaces,
+            });
         }
     }
 
     function extractFromFeature(feature: Feature) {
+        const coordinateProperties = feature.properties?.coordinateProperties;
+        const metadata =
+            coordinateProperties && typeof coordinateProperties === "object"
+                ? {
+                    times: coordinateProperties.times as CoordinateSeriesCollection,
+                    surfaces: coordinateProperties.surfaces as CoordinateSeriesCollection,
+                }
+                : undefined;
+
         if (feature.geometry) {
-            extractFromGeometry(feature.geometry);
-        }
-        if (feature.properties?.coordinateProperties?.times) {
-            const coordinateTimes = feature.properties?.coordinateProperties?.times.map((t: string) => new Date(t))
-            times.push(...coordinateTimes)
+            extractFromGeometry(feature.geometry, metadata);
         }
     }
 
@@ -50,7 +158,7 @@ function extractLineStrings(
             if (feature.type === "Feature") {
                 extractFromFeature(feature);
             } else if (feature.type === "FeatureCollection") {
-                extractFromFeatureCollection(feature as unknown as FeatureCollection); // had to add unknown
+                extractFromFeatureCollection(feature as unknown as FeatureCollection);
             }
         }
     }
@@ -60,26 +168,89 @@ function extractLineStrings(
     } else if (geoJson.type === "FeatureCollection") {
         extractFromFeatureCollection(geoJson as FeatureCollection);
     } else {
-        // It's a single geometry
         extractFromGeometry(geoJson as GeometryObject);
     }
 
-    return { lineStrings, times };
+    return segments;
 }
 
-function geoJsonObjectToPositionsAndTimes(geoJson: GeoJsonObject): { positions: Position[], times: Date[] } {
-    const { lineStrings, times } = extractLineStrings(geoJson);
-    const positionsGroups: Position[][] = [];
+function isSeriesCollectionArray(
+    collection: CoordinateSeriesCollection
+): collection is CoordinateSeries[] {
+    return (
+        Array.isArray(collection) &&
+        collection.length > 0 &&
+        collection.every((item) => Array.isArray(item))
+    );
+}
 
-    for (let i = 0; i < lineStrings.length; i += 1) {
-        const feature = lineStrings[i];
-        if (feature.type === "LineString") {
-            positionsGroups.push(feature.coordinates);
-        } else if (feature.type === "MultiLineString") {
-            positionsGroups.push(feature.coordinates.flat());
+function extractSeriesForIndex(
+    collection: CoordinateSeriesCollection,
+    index: number
+): CoordinateSeries | undefined {
+    if (!collection) {
+        return undefined;
+    }
+
+    if (isSeriesCollectionArray(collection)) {
+        return collection[index];
+    }
+
+    return collection as CoordinateSeries;
+}
+
+function getValueAt(series: CoordinateSeries | undefined, index: number) {
+    if (!series) {
+        return undefined;
+    }
+    return series[index];
+}
+
+function geoJsonObjectToPositionsTimesAndSurfaces(
+    geoJson: GeoJsonObject
+): { positions: Position[]; times: Array<Date | undefined>; surfaces: Array<string | undefined> } {
+    const segments = extractLineStrings(geoJson);
+    const positions: Position[] = [];
+    const times: Array<Date | undefined> = [];
+    const surfaces: Array<string | undefined> = [];
+
+    const appendSeries = (
+        coordinates: Position[],
+        timesSeries?: CoordinateSeries,
+        surfacesSeries?: CoordinateSeries
+    ) => {
+        for (let i = 0; i < coordinates.length; i += 1) {
+            positions.push(coordinates[i]);
+
+            const timeValue = getValueAt(timesSeries, i);
+            times.push(typeof timeValue === "string" ? new Date(timeValue) : undefined);
+
+            const surfaceValue = getValueAt(surfacesSeries, i);
+            surfaces.push(typeof surfaceValue === "string" ? surfaceValue : undefined);
+        }
+    };
+
+    for (const segment of segments) {
+        const { geometry, times: timesCollection, surfaces: surfacesCollection } = segment;
+
+        if (geometry.type === "LineString") {
+            appendSeries(
+                geometry.coordinates,
+                extractSeriesForIndex(timesCollection, 0),
+                extractSeriesForIndex(surfacesCollection, 0)
+            );
+        } else if (geometry.type === "MultiLineString") {
+            geometry.coordinates.forEach((coords, index) => {
+                appendSeries(
+                    coords,
+                    extractSeriesForIndex(timesCollection, index),
+                    extractSeriesForIndex(surfacesCollection, index)
+                );
+            });
         }
     }
-    return { positions: positionsGroups.flat(), times };
+
+    return { positions, times, surfaces };
 }
 
 /**
@@ -367,9 +538,10 @@ export class ElevationProfile {
     private grade: number[] = [];
     private waypointPositions: number[] = []
     private waypoints: Waypoint[] = [];
-    private times: Date[] = [];
+    private times: Array<Date | undefined> = [];
     private cumulatedTime: number[] = []
     private speed: number[] = [];
+    private surfaces: (string | undefined)[] = [];
 
     private gradeColor = [
         "#0d0887", // 0% and less
@@ -389,6 +561,10 @@ export class ElevationProfile {
     private width?: number
     private height?: number
     private gradient?: CanvasGradient;
+    private surfaceGradient?: CanvasGradient;
+    private surfaceGradientWidth?: number;
+    private surfaceGradientHeight?: number;
+    //private surfaceGradientKey?: string;
 
 
     constructor(
@@ -431,15 +607,15 @@ export class ElevationProfile {
             data: {
                 labels: [],
                 datasets: [
-                    {
-                        label: "Elevation",
+                    /*{
+                        label: "Surface",
                         yAxisID: "y",
                         data: [],
                         pointRadius: 0,
-                        fill: !!this.settings.profileBackgroundColor,
+                        fill: false,// !!this.settings.profileBackgroundColor,
                         borderColor: (context) => {
                             const chart = context.chart;
-                            return this.gradientFromElevation(chart)
+                            return this.colorFromSurfaceType(chart)
                         },
                         // borderColor: this.settings.profileLineColor ?? "#0000",
                         backgroundColor: this.settings.profileBackgroundColor ?? "#0000",
@@ -450,7 +626,28 @@ export class ElevationProfile {
                         borderWidth: this.settings.profileLineColor
                             ? this.settings.profileLineWidth
                             : 0,
-                    }
+                    },*/
+                    {
+                        label: "Elevation",
+                        yAxisID: "y",
+                        data: [],
+                        pointRadius: 0,
+                        fill: !!this.settings.profileBackgroundColor,
+                        borderColor: (context) => {
+                            const chart = context.chart;
+                            return this.gradientFromElevation(chart)
+                        },
+                        // borderColor: this.settings.profileLineColor ?? "#161414",
+                        backgroundColor: (context) => this.colorFromSurfaceType(context),
+                        //this.settings.profileBackgroundColor ?? "#0000",
+                        tension: 0.1,
+                        spanGaps: true,
+
+                        // If line color is null, the line width is set to 0
+                        borderWidth: this.settings.profileLineColor
+                            ? this.settings.profileLineWidth
+                            : 0,
+                    },
                 ],
             },
 
@@ -779,6 +976,83 @@ export class ElevationProfile {
         return null;
     }
 
+    colorFromSurfaceType(context: ScriptableContext<"line">) {
+        const fallbackColor = this.settings.profileBackgroundColor ?? DEFAULT_SURFACE_COLOR;
+        const sampleCount = Math.min(this.surfaces.length, this.cumulatedDistance.length);
+
+        if (context.type !== "dataset") {
+            return fallbackColor;
+        }
+
+        const chartArea = context.chart.chartArea;
+        if (!chartArea || sampleCount === 0) {
+            return fallbackColor;
+        }
+
+        const chartWidth = chartArea.right - chartArea.left;
+        const chartHeight = chartArea.bottom - chartArea.top;
+
+        if (chartWidth <= 0 || chartHeight <= 0) {
+            return fallbackColor;
+        }
+
+        const segments: Array<{ index: number; surface: string | undefined }> = [];
+        if (sampleCount > 0) {
+            let previousSurface = this.surfaces[0];
+            segments.push({ index: 0, surface: previousSurface });
+            for (let i = 1; i < sampleCount; i++) {
+                const surface = this.surfaces[i] ?? previousSurface;
+                if (surface !== previousSurface) {
+                    segments.push({ index: i, surface });
+                    previousSurface = surface;
+                }
+            }
+        }
+
+        if (!segments.length) {
+            return fallbackColor;
+        }
+
+        const totalDistance = this.cumulatedDistance[sampleCount - 1] ?? 0;
+        /*const signature = `${Math.round(totalDistance)}` + segments
+            .map((segment) => `|${segment.index}:${segment.surface ?? ""}`)
+            .join("");*/
+
+        if (
+            !this.surfaceGradient ||
+            this.surfaceGradientWidth !== chartWidth ||
+            this.surfaceGradientHeight !== chartHeight/* ||
+            this.surfaceGradientKey !== signature*/
+        ) {
+            const ctx = context.chart.ctx;
+            const gradient = ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0);
+            const hasDistance = totalDistance > 0;
+
+            let currentColor = getSurfaceColor(segments[0].surface, fallbackColor);
+            gradient.addColorStop(0, currentColor);
+
+            if (hasDistance) {
+                for (let i = 1; i < segments.length; i++) {
+                    const { index, surface } = segments[i];
+                    const distance = this.cumulatedDistance[index] ?? totalDistance;
+                    const stop = Math.min(1, Math.max(0, distance / totalDistance));
+                    gradient.addColorStop(stop, currentColor);
+                    currentColor = getSurfaceColor(surface, fallbackColor);
+                    gradient.addColorStop(stop, currentColor);
+                }
+            }
+
+            gradient.addColorStop(1, currentColor);
+
+            this.surfaceGradient = gradient;
+            this.surfaceGradientWidth = chartWidth;
+            this.surfaceGradientHeight = chartHeight;
+            //this.surfaceGradientKey = signature;
+        }
+
+        return this.surfaceGradient ?? fallbackColor;
+    }
+
     gradientFromElevation(chart: Chart, force: boolean = false) {
         const ctx = chart.ctx;
         const chartArea = chart.chartArea;
@@ -875,7 +1149,12 @@ export class ElevationProfile {
             ...this.settings,
             ...options,
         };
-        this.chart.data.datasets[0].backgroundColor = this.settings.profileBackgroundColor ?? "#0000";
+        this.surfaceGradient = undefined;
+        //this.surfaceGradientKey = undefined;
+        this.surfaceGradientWidth = undefined;
+        this.surfaceGradientHeight = undefined;
+        this.chart.data.datasets[0].backgroundColor = (context) => this.colorFromSurfaceType(context);
+        this.chart.data.datasets[0].fill = this.surfaces.length > 0 || !!this.settings.profileBackgroundColor;
         this.chart.options.scales!.x!.ticks!.color = this.settings.labelColor;
 
         this.chart.options.scales!.y!.grid!.color = this.settings.elevationGridColor;
@@ -889,9 +1168,13 @@ export class ElevationProfile {
 
     async setData(data: GeoJsonObject, waypoints?: Waypoint[]) {
         // Concatenates the positions that may come from multiple LineStrings or MultiLineString
-        const { positions, times } = geoJsonObjectToPositionsAndTimes(data);
+        const { positions, times, surfaces } = geoJsonObjectToPositionsTimesAndSurfaces(data);
 
         this.times = times;
+        this.surfaceGradient = undefined;
+        //this.surfaceGradientKey = undefined;
+        this.surfaceGradientWidth = undefined;
+        this.surfaceGradientHeight = undefined;
 
         this.elevatedPositions = smoothElevations(positions, Math.ceil(positions.length / 100));
 
@@ -923,6 +1206,9 @@ export class ElevationProfile {
         this.grade = [];
         this.waypoints = waypoints ?? [];
         this.waypointPositions = [];
+        this.surfaces = surfaces;
+        this.chart.data.datasets[0].backgroundColor = (context) => this.colorFromSurfaceType(context);
+        this.chart.data.datasets[0].fill = this.surfaces.length > 0 || !!this.settings.profileBackgroundColor;
 
         let cumulatedDPlus = 0;
         let cumulatedTime = 0;
@@ -959,9 +1245,11 @@ export class ElevationProfile {
 
                 if (time) {
                     const timePrevious = this.times[i - 1];
-                    const timeDelta = (time.getTime() - timePrevious.getTime()) / (1000);
-                    cumulatedTime += timeDelta;
-                    this.cumulatedTime.push(cumulatedTime)
+                    if (timePrevious) {
+                        const timeDelta = (time.getTime() - timePrevious.getTime()) / 1000;
+                        cumulatedTime += timeDelta;
+                        this.cumulatedTime.push(cumulatedTime);
+                    }
                 }
 
 
@@ -1031,11 +1319,19 @@ export class ElevationProfile {
         this.chart.data.datasets[0].data = this.elevatedPositionsAdjustedUnit.map(
             (pos) => pos[2]
         );
+        /*this.chart.data.datasets[1].data = this.elevatedPositionsAdjustedUnit.map(
+            (pos) => minElevation //- elevationPadding
+        );*/
 
         const gradient = this.gradientFromElevation(this.chart, true);
         if (gradient) {
-            this.chart.data.datasets[0].borderColor = gradient
+            this.chart.data.datasets[0].borderColor = gradient;
         }
+        /*const surfaceColor = this.colorFromSurfaceType(this.chart);
+        if (surfaceColor) {
+            this.chart.data.datasets[0].backgroundColor = surfaceColor;
+            //this.chart.data.datasets[1].borderColor = surfaceColor;
+        }*/
 
         if (
             this.chart.options.scales &&
