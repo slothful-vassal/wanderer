@@ -180,43 +180,6 @@ export async function trails_show(id: string, handle?: string, share?: string, l
     return response as Trail;
 }
 
-export async function trails_persist_attributes(trailModel: Trail, attributes: TrailAttributes, f: (url: RequestInfo | URL, config?: RequestInit) => Promise<Response> = fetch) {
-    if (!trailModel.id) {
-        return;
-    }
-
-    const r = await f(`/api/v1/trail/${trailModel.id}`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            name: trailModel.name,
-            attributes: attributes,
-        }),
-    });
-
-    if (!r.ok) {
-        const response = await r.json();
-        throw new APIError(r.status, response.message, response.detail);
-    }
-
-    const updated: Trail = await r.json();
-    const normalizedAttributes = updated.attributes ?? attributes;
-
-    const index = trails.findIndex((t) => t.id === updated.id);
-    if (index !== -1) {
-        trails[index] = { ...trails[index], attributes: normalizedAttributes };
-    }
-
-    trail.update((current) => {
-        if (current.id !== updated.id) {
-            return current;
-        }
-        return { ...current, attributes: normalizedAttributes };
-    });
-}
-
 export async function trails_create(trail: Trail, photos: File[], gpx: File | Blob | null, f: (url: RequestInfo | URL, config?: RequestInit) => Promise<Response> = fetch, user?: AuthRecord) {
     user ??= get(currentUser)
     if (!user) {
@@ -234,7 +197,7 @@ export async function trails_create(trail: Trail, photos: File[], gpx: File | Bl
 
     trail.author = user.actor
 
-    const formData = objectToFormData(trail, ["surface", "way_type"])
+    const formData = objectToFormData(trail, ["attributes"])
 
     if (trail.attributes) {
         formData.set("attributes", JSON.stringify(trail.attributes));
@@ -336,7 +299,7 @@ export async function trails_update(oldTrail: Trail, newTrail: Trail, photos?: F
         newTrail.tags = newTrail.tags.filter(t => t != tag.id);
     }
 
-    const formData = objectToFormData(newTrail, ["expand", "surface", "way_type"])
+    const formData = objectToFormData(newTrail, ["expand", "attributes"])
 
     if (newTrail.attributes) {
         formData.set("attributes", JSON.stringify(newTrail.attributes));

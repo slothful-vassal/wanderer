@@ -314,10 +314,6 @@ async function fetchTrailAttributesForShape(shapePoints: ValhallaShapePoint[], c
 
     const segments = splitShapePointsByMaxLength(shapePoints, VALHALLA_MAX_PATH_LENGTH_METERS);
 
-    if (segments.length <= 1) {
-        return requestRouteAttributesForShapeSegment(shapePoints, costingBody);
-    }
-
     const aggregatedAttributes = Array<TrailAttributePoint | undefined>(shapePoints.length).fill(undefined);
 
     for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
