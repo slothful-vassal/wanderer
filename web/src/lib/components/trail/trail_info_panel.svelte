@@ -25,7 +25,7 @@
     import emptyStateTrailDark from "$lib/assets/svgs/empty_states/empty_state_trail_dark.svg";
     import emptyStateTrailLight from "$lib/assets/svgs/empty_states/empty_state_trail_light.svg";
     import { theme } from "$lib/stores/theme_store";
-    import { trail as trailStore } from "$lib/stores/trail_store";
+    import { trail as trailStore, trails_persist_surface } from "$lib/stores/trail_store";
     import { show_toast } from "$lib/stores/toast_store.svelte";
     import { fetchSurfaceDataForGPX } from "$lib/stores/valhalla_store.svelte";
     import * as M from "maplibre-gl";
@@ -156,6 +156,12 @@
             trail.expand.gpx = gpx;
             trailStore.set(trail);
             
+            try {
+                await trails_persist_surface(trail, surface);
+            } catch (persistError) {
+                console.warn("Unable to persist surface data for trail", persistError);
+            }
+
         } catch (error) {
             console.warn("Unable to populate surface data for trail", error);
         } finally {

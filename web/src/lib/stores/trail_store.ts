@@ -180,6 +180,43 @@ export async function trails_show(id: string, handle?: string, share?: string, l
     return response as Trail;
 }
 
+export async function trails_persist_surface(trailModel: Trail, surface: TrailSurface, f: (url: RequestInfo | URL, config?: RequestInit) => Promise<Response> = fetch) {
+    if (!trailModel.id) {
+        return;
+    }
+
+    const r = await f(`/api/v1/trail/${trailModel.id}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            name: trailModel.name,
+            surface,
+        }),
+    });
+
+    if (!r.ok) {
+        const response = await r.json();
+        throw new APIError(r.status, response.message, response.detail);
+    }
+
+    const updated: Trail = await r.json();
+    const normalizedSurface = updated.surface ?? surface;
+
+    const index = trails.findIndex((t) => t.id === updated.id);
+    if (index !== -1) {
+        trails[index] = { ...trails[index], surface: normalizedSurface };
+    }
+
+    trail.update((current) => {
+        if (current.id !== updated.id) {
+            return current;
+        }
+        return { ...current, surface: normalizedSurface };
+    });
+}
+
 export async function trails_create(trail: Trail, photos: File[], gpx: File | Blob | null, f: (url: RequestInfo | URL, config?: RequestInit) => Promise<Response> = fetch, user?: AuthRecord) {
     user ??= get(currentUser)
     if (!user) {
