@@ -609,7 +609,7 @@ export function resetRoute() {
     })
 
     valhallaStore.anchors = []
-    setTrailAttributes();    // Todo: verify if needed
+    setTrailAttributes();
 }
 
 export async function recalculateHeight() {

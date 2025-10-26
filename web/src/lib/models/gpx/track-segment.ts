@@ -26,15 +26,6 @@ export default class TrackSegment {
     ]);
 
     const times = (this.trkpt || []).map(pt => pt.time?.toISOString() ?? null);
-    const surfaces = (this.trkpt || []).map(pt => pt.surface ?? null);
-
-    const coordinateProperties: Record<string, unknown> = {
-      times
-    };
-
-    if (surfaces.some(surface => surface !== null)) {
-      coordinateProperties.surfaces = surfaces;
-    }
 
     return {
       type: "Feature",
@@ -49,7 +40,9 @@ export default class TrackSegment {
         number: track.number,
         featureId,
         segmentId,
-        coordinateProperties
+        coordinateProperties: {
+          times
+        }
       }
     };
   }

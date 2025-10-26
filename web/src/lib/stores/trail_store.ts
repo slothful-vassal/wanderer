@@ -1,6 +1,6 @@
 import type { SummitLog } from "$lib/models/summit_log";
 import type { Tag } from "$lib/models/tag";
-import { defaultTrailSearchAttributes, Trail, type TrailAttributes, type TrailFilter, type TrailFilterValues, type TrailSearchResult } from "$lib/models/trail";
+import { defaultTrailSearchAttributes, Trail, type TrailFilter, type TrailFilterValues, type TrailSearchResult } from "$lib/models/trail";
 import type { Waypoint } from "$lib/models/waypoint";
 import { APIError } from "$lib/util/api_util";
 import { deepEqual } from "$lib/util/deep_util";

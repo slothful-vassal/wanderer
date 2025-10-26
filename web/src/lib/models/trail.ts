@@ -8,34 +8,6 @@ import type { TrailLike } from "./trail_like";
 import type { TrailShare } from "./trail_share";
 import type { Waypoint } from "./waypoint";
 
-/*
-type TrailSurface = {
-    perPoint?: TrailSurfacePoint[];
-    summary?: Record<string, number>;
-};
-
-type TrailSurfacePoint = {
-    lat?: number;
-    lon?: number;
-    type?: string;
-}
-
-type TrailWayTypeSummary = {
-    type?: Record<string, number>;
-    scale?: Record<string, number>;
-};
-
-type TrailWayTypes = {
-    perPoint?: TrailWayTypePoint[];
-    summary?: TrailWayTypeSummary;
-};
-
-type TrailWayTypePoint = {
-    lat?: number;
-    lon?: number;
-    type?: string;
-    scale?: number;
-}*/
 
 type TrailAttributes = {
     perPoint?: TrailAttributePoint[];
@@ -74,8 +46,6 @@ class Trail {
     gpx?: string;
     created?: string;
     updated?: string;
-    //surface?: TrailSurface;
-    //way_type?: TrailWayTypes;
     attributes?: TrailAttributes;
     category?: string;
     tags: string[];
@@ -123,8 +93,6 @@ class Trail {
             tags?: string[],
             description?: string
             created?: string,
-            /*surface?: TrailSurface,
-            way_type?: TrailWayTypes,*/
             attributes?: TrailAttributes,
         }
 
@@ -143,8 +111,6 @@ class Trail {
         this.lon = params?.lon;
         this.thumbnail = params?.thumbnail ?? 0;
         this.photos = params?.photos ?? [];
-        /*this.surface = params?.surface;
-        this.way_type = params?.way_type;*/
         this.attributes = params?.attributes;
         this.tags = []
         this.gpx = params?.gpx;
@@ -283,9 +249,4 @@ export type {
     TrailAttributes,
     TrailAttributePoint,
     TrailAttributeSummary,
-    /*TrailSurface,
-    TrailSurfacePoint,
-    TrailWayTypeSummary,
-    TrailWayTypePoint,
-    TrailWayTypes,*/
 };

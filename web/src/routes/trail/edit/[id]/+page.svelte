@@ -485,7 +485,13 @@
 
             if (point.attributes) {
                 if (point.attributes.surface !== currentAttribute?.surface || point.attributes.type !== currentAttribute?.type || point.attributes.diffScale !== currentAttribute?.diffScale) {
-                    perAttributePoint.push({ lat, lon, type: point.attributes.type, diffScale: point.attributes.diffScale })
+                    perAttributePoint.push({
+                        lat,
+                        lon,
+                        surface: point.attributes.surface,
+                        type: point.attributes.type,
+                        diffScale: point.attributes.diffScale,
+                    });
                 }
 
                 currentAttribute = point.attributes;
