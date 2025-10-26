@@ -19,15 +19,21 @@ type TrailSurfacePoint = {
     type?: string;
 }
 
+type TrailWayTypeSummary = {
+    type?: Record<string, number>;
+    scale?: Record<string, number>;
+};
+
 type TrailWayTypes = {
     perPoint?: TrailWayTypePoint[];
-    summary?: Record<string, number>;
+    summary?: TrailWayTypeSummary;
 };
 
 type TrailWayTypePoint = {
     lat?: number;
     lon?: number;
     type?: string;
+    scale?: number;
 }
 
 class Trail {
@@ -253,7 +259,7 @@ export type {
     TrailSearchResult,
     TrailSurface,
     TrailSurfacePoint,
+    TrailWayTypeSummary,
     TrailWayTypePoint,
     TrailWayTypes,
 };
-

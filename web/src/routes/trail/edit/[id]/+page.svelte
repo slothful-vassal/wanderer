@@ -19,7 +19,7 @@
     import GPXWaypoint from "$lib/models/gpx/waypoint";
     import type { List } from "$lib/models/list";
     import { SummitLog } from "$lib/models/summit_log";
-    import { Trail, type TrailSurface, type TrailSurfacePoint, type TrailWayTypes as TrailWayType, type TrailWayTypePoint } from "$lib/models/trail";
+    import { Trail, type TrailSurface, type TrailSurfacePoint, type TrailWayTypes as TrailWayType, type TrailWayTypePoint, type TrailWayTypeSummary } from "$lib/models/trail";
     import type { RoutingOptions, ValhallaAnchor } from "$lib/models/valhalla";
     import { Waypoint } from "$lib/models/waypoint";
     import { categories } from "$lib/stores/category_store";
@@ -98,7 +98,7 @@
     import { onMount, tick, untrack } from "svelte";
     import { _ } from "svelte-i18n";
     import { backInOut } from "svelte/easing";
-    import { fly, slide } from "svelte/transition";
+    import { fly, scale, slide } from "svelte/transition";
     import { z } from "zod";
     import Track from "$lib/models/gpx/track.js";
     import TrackSegment from "$lib/models/gpx/track-segment.js";
@@ -270,6 +270,22 @@
         },
     });
 
+    function hasWayTypeSummaryData(summary: TrailWayTypeSummary | Record<string, number> | undefined): boolean {
+        if (!summary) {
+            return false;
+        }
+
+        if ("type" in summary || "scale" in summary) {
+            const typedSummary = summary as TrailWayTypeSummary;
+            return (
+                Object.keys(typedSummary.type ?? {}).length > 0 ||
+                Object.keys(typedSummary.scale ?? {}).length > 0
+            );
+        }
+
+        return Object.keys(summary).length > 0;
+    }
+
     function hasTrailAttributesData(surface: TrailSurface | undefined, wayType: TrailWayType | undefined): boolean {
         if (!surface || !wayType) {
             return false;
@@ -278,7 +294,7 @@
         const hasSurfacePerPoint = (surface.perPoint?.length ?? 0) > 0;
         const hasWayTypePerPoint = (wayType.perPoint?.length ?? 0) > 0;
         const hasSurfaceSummary = Object.keys(surface.summary ?? {}).length > 0;
-        const hasWayTypeSummary = Object.keys(wayType.summary ?? {}).length > 0;
+        const hasWayTypeSummary = hasWayTypeSummaryData(wayType.summary);
 
         return (hasSurfacePerPoint || hasSurfaceSummary) && (hasWayTypePerPoint || hasWayTypeSummary);
     }
@@ -336,7 +352,7 @@
         return { costing: "pedestrian" };
     }
 
-    async function ensureTrailAttributesDataForRoute() {
+    async function ensureTrailAttributesDataForRoute(hiking: boolean | undefined) {
         if (trailAttributeDataLoading) {
             return;
         }
@@ -496,13 +512,13 @@
                     }
 
                     if (item.lat == wayTypePoint.lat && item.lon == wayTypePoint.lon) {
-                        return { index: i, type: wayTypePoint.type };
+                        return { index: i, type: { type: wayTypePoint.type, scale: wayTypePoint.scale } };
                     }
                 }
 
                 return null;
             })
-            .filter((item): item is { index: number; type: string } => item !== null)
+            .filter((item): item is { index: number; type: { type: string, scale: number | undefined } } => item !== null)
             .sort((a, b) => a.index - b.index);
 
         // remove waytype information from gpx if no matching input waytype was found
@@ -518,7 +534,7 @@
             return;
         }
 
-        let currentWayType: string | undefined;
+        let currentWayType: { type: string, scale: number | undefined} | undefined;
         let wayTypeBreakpointCursor = 0;
 
         for (let i = 0; i < flattened.length; i++) {
@@ -531,7 +547,7 @@
             }
 
             const { point } = flattened[i];
-            const setter = (point as any).setWayType as ((wayType?: string) => void) | undefined;
+            const setter = (point as any).setWayType as ((wayType?: { type: string, scale: number | undefined}) => void) | undefined;
             if (typeof setter === "function") {
                 setter.call(point, currentWayType);
             } else if (currentWayType === undefined) {
@@ -551,7 +567,7 @@
         const perSurfacePoint: TrailSurfacePoint[] = [];
         const perWayTypePoint: TrailWayTypePoint[] = [];
         let currentSurface: string | undefined;
-        let currentWayType: string | undefined;
+        let currentWayType: { type: string, scale: number | undefined} | undefined;
 
         for (const { point, lat, lon } of flattened) {
             if (!lat || !lon || Number.isNaN(lat) || Number.isNaN(lon)) {
@@ -567,8 +583,8 @@
             }
 
             if (point.wayType) {
-                if (point.wayType !== currentWayType) {
-                    perWayTypePoint.push({ lat, lon, type: point.wayType })
+                if (point.wayType.type !== currentWayType?.type || point.wayType.scale !== currentWayType?.scale) {
+                    perWayTypePoint.push({ lat, lon, type: point.wayType.type, scale: point.wayType.scale })
                 }
 
                 currentWayType = point.wayType;
@@ -580,7 +596,7 @@
         }
 
         const hasSurfaceSummary = Object.keys(valhallaStore.surface.summary ?? {}).length > 0;
-        const hasWayTypeSummary = Object.keys(valhallaStore.wayType.summary ?? {}).length > 0;
+        const hasWayTypeSummary = hasWayTypeSummaryData(valhallaStore.wayType.summary);
 
         if ((!perSurfacePoint.length) && !hasSurfaceSummary && (!perWayTypePoint.length) && !hasWayTypeSummary) {
             return {};
@@ -637,7 +653,9 @@
                 initRouteAnchors(gpx);
                 const { surfaceData, wayTypeData } = updateTrailAttributesFieldsFromRoute();
                 updateTrailOnMap(surfaceData, wayTypeData);
-                await ensureTrailAttributesDataForRoute();
+
+                const category = $formData.category;
+                await ensureTrailAttributesDataForRoute(category == "28u13dp5p7ry2n7");
             }
         }
     });
@@ -673,6 +691,8 @@
             setFields(parseResult.trail);
             $formData.id = prevId ?? cryptoRandomString({ length: 15 });
             $formData.expand!.gpx_data = gpxData;
+
+            const category = page.data.settings.category || $categories[0].id;
 
             setFields(
                 "category",
@@ -718,7 +738,7 @@
             const { surfaceData, wayTypeData } = updateTrailAttributesFieldsFromRoute();
             updateTrailOnMap(surfaceData, wayTypeData);
 
-            await ensureTrailAttributesDataForRoute();
+            await ensureTrailAttributesDataForRoute(category == "28u13dp5p7ry2n7");
         } catch (e) {
             console.error(e);
 

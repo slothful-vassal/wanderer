@@ -3,7 +3,7 @@ import Track from "$lib/models/gpx/track";
 import TrackSegment from "$lib/models/gpx/track-segment";
 import { haversineDistance } from "$lib/models/gpx/utils";
 import Waypoint from "$lib/models/gpx/waypoint";
-import type { TrailSurface, TrailSurfacePoint, TrailWayTypes, TrailWayTypePoint } from "$lib/models/trail";
+import type { TrailSurface, TrailSurfacePoint, TrailWayTypeSummary, TrailWayTypes, TrailWayTypePoint } from "$lib/models/trail";
 import { type RoutingOptions, type ValhallaAnchor, type ValhallaHeightResponse, type ValhallaRouteResponse, type ValhallaTraceAttributesResponse } from "$lib/models/valhalla";
 import { APIError } from "$lib/util/api_util";
 import { decodePolyline } from "$lib/util/polyline_util";
@@ -24,6 +24,11 @@ class ValhallaStore {
 }
 
 export const valhallaStore = new ValhallaStore();
+
+type WayTypeSummaryAccumulator = {
+    type: Record<string, number>;
+    scale: Record<string, number>;
+};
 
 function buildSurfaceFromRoute(route: GPX): TrailSurface {
     const summary: Record<string, number> = {};
@@ -65,7 +70,7 @@ function buildSurfaceFromRoute(route: GPX): TrailSurface {
 }
 
 function buildWayTypesFromRoute(route: GPX): TrailWayTypes {
-    const summary: Record<string, number> = {};
+    const summaryAccumulator = { type: {}, scale: {} };
     const perPoint: TrailWayTypePoint[] = [];
 
     for (const track of route.trk ?? []) {
@@ -75,11 +80,15 @@ function buildWayTypesFromRoute(route: GPX): TrailWayTypes {
                 continue;
             }
 
-            mergeClassificationSummaries(summary, summarizeWayTypeLengths(points));
+            mergeWayTypeSummaries(summaryAccumulator, summarizeWayTypeLengths(points));
 
-            let currentWayType: string | undefined;
+            let currentWayType: { type: string; scale: number | undefined } | undefined;
             for (const point of points) {
-                if (!point.wayType || point.wayType === currentWayType) {
+                if (
+                    !point.wayType ||
+                    (point.wayType.type === currentWayType?.type &&
+                        point.wayType.scale === currentWayType?.scale)
+                ) {
                     continue;
                 }
 
@@ -90,17 +99,23 @@ function buildWayTypesFromRoute(route: GPX): TrailWayTypes {
                     continue;
                 }
 
-                perPoint.push({ lat, lon, type: point.wayType });
+                perPoint.push({ lat, lon, type: point.wayType.type, scale: point.wayType.scale });
                 currentWayType = point.wayType;
             }
         }
     }
 
-    if (perPoint.length == 0) {
-        return {};
+    const result: TrailWayTypes = {};
+    if (perPoint.length) {
+        result.perPoint = perPoint;
     }
 
-    return { perPoint, summary };
+    const summary = finalizeWayTypeSummary(summaryAccumulator);
+    if (summary) {
+        result.summary = summary;
+    }
+
+    return Object.keys(result).length ? result : {};
 }
 
 function summarizeSurfaceLengths(points: Waypoint[]): Record<string, number> {
@@ -125,8 +140,8 @@ function summarizeSurfaceLengths(points: Waypoint[]): Record<string, number> {
     return summary;
 }
 
-function summarizeWayTypeLengths(points: Waypoint[]): Record<string, number> {
-    const summary: Record<string, number> = {};
+function summarizeWayTypeLengths(points: Waypoint[]): WayTypeSummaryAccumulator {
+    const summary = { type: {}, scale: {} };
 
     for (let i = 1; i < points.length; i++) {
         const previous = points[i - 1];
@@ -145,6 +160,29 @@ function summarizeWayTypeLengths(points: Waypoint[]): Record<string, number> {
         accumulateWayTypeLength(summary, current.wayType ?? previous.wayType, segmentLength);
     }
     return summary;
+}
+
+function mergeWayTypeSummaries(target: WayTypeSummaryAccumulator, addition: WayTypeSummaryAccumulator) {
+    mergeClassificationSummaries(target.type, addition.type);
+    mergeClassificationSummaries(target.scale, addition.scale);
+}
+
+function finalizeWayTypeSummary(summary: WayTypeSummaryAccumulator): TrailWayTypeSummary | undefined {
+    const result: TrailWayTypeSummary = {};
+
+    if (hasSummaryEntries(summary.type)) {
+        result.type = summary.type;
+    }
+
+    if (hasSummaryEntries(summary.scale)) {
+        result.scale = summary.scale;
+    }
+
+    return Object.keys(result).length ? result : undefined;
+}
+
+function hasSummaryEntries(summary: Record<string, number>): boolean {
+    return Object.keys(summary).length > 0;
 }
 
 function mergeClassificationSummaries(target: Record<string, number>, addition: Record<string, number>) {
@@ -188,6 +226,7 @@ type ValhallaShapePoint = { lat: number; lon: number };
 
 const UNKNOWN_SURFACE = "unknown";
 const UNKNOWN_WAY_TYPE = "unknown";
+const UNKNOWN_WAY_SCALE = 0;
 const VALHALLA_MAX_PATH_LENGTH_METERS = 150_000;    // 200_000 specified, but ensure rounding differences
 
 function accumulateSurfaceLength(summary: Record<string, number>, surface: string | undefined, length: number) {
@@ -199,13 +238,22 @@ function accumulateSurfaceLength(summary: Record<string, number>, surface: strin
     summary[key] = (summary[key] ?? 0) + length;
 }
 
-function accumulateWayTypeLength(summary: Record<string, number>, wayType: string | undefined, length: number) {
+function accumulateWayTypeLength(
+    summary: WayTypeSummaryAccumulator,
+    wayType: { type: string; scale: number | undefined } | undefined,
+    length: number,
+) {
     if (!Number.isFinite(length) || length <= 0) {
         return;
     }
 
-    const key = wayType && wayType.length ? wayType : UNKNOWN_WAY_TYPE;
-    summary[key] = (summary[key] ?? 0) + length;
+    const typeKey = wayType && wayType.type.length ? wayType.type : UNKNOWN_WAY_TYPE;
+    summary.type[typeKey] = (summary.type[typeKey] ?? 0) + length;
+
+    const scaleValue = wayType?.scale;
+    const scaleKey =
+        scaleValue === undefined || scaleValue === null ? `${UNKNOWN_WAY_SCALE}` : `${scaleValue}`;
+    summary.scale[scaleKey] = (summary.scale[scaleKey] ?? 0) + length;
 }
 
 type ShapeSegment = { start: number; points: ValhallaShapePoint[] };
@@ -240,7 +288,7 @@ function splitShapePointsByMaxLength(shapePoints: ValhallaShapePoint[], maxLengt
 
 type RouteAttributes = {
     surfaces: (string | undefined)[];
-    wayTypes: (string | undefined)[];
+    wayTypes: ({ type: string, scale: number | undefined} | undefined)[];
 };
 
 async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<RouteAttributes> {
@@ -251,7 +299,7 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
     if (shapePoints.length < 2) {
         return {
             surfaces: Array<string | undefined>(shapePoints.length).fill(undefined),
-            wayTypes: Array<string | undefined>(shapePoints.length).fill(undefined),
+            wayTypes: Array<{ type: string, scale: number | undefined} | undefined>(shapePoints.length).fill(undefined),
         };
     }
 
@@ -289,7 +337,7 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
 
         const trailAttributesResponse: ValhallaTraceAttributesResponse = await response.json();
         const surfaces = Array<string | undefined>(shapePoints.length).fill(undefined);
-        const wayTypes = Array<string | undefined>(shapePoints.length).fill(undefined);
+        const wayTypes = Array<{ type: string, scale: number | undefined} | undefined>(shapePoints.length).fill(undefined);
 
         for (const edge of trailAttributesResponse.edges ?? []) {
             if (typeof edge.begin_shape_index !== "number" || typeof edge.end_shape_index !== "number") {
@@ -304,10 +352,14 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
                     surfaces[i] = edge.surface;
                 }
                 if (edge.road_class) {
-                    wayTypes[i] = edge.road_class;
+                    let scale: number | undefined = undefined;
+                    if (edge.sac_scale != undefined && typeof edge.sac_scale === "number") {
+                        scale = edge.sac_scale;
+                    }
+                    wayTypes[i] = { type: edge.road_class, scale: scale };
                 }
                 if (edge.use && edge.use == "ferry") {
-                    wayTypes[i] = edge.use;
+                    wayTypes[i] = { type: edge.use, scale: undefined };
                 }
             }
         }
@@ -331,7 +383,7 @@ async function fetchRouteAttributesForShape(shapePoints: ValhallaShapePoint[], c
     }
 
     const aggregatedSurfaces = Array<string | undefined>(shapePoints.length).fill(undefined);
-    const aggregatedWayTypes = Array<string | undefined>(shapePoints.length).fill(undefined);
+    const aggregatedWayTypes = Array<{ type: string, scale: number | undefined} | undefined>(shapePoints.length).fill(undefined);
 
     for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
         const { start, points } = segments[segmentIndex];
@@ -379,8 +431,8 @@ function setWaypointSurface(point: Waypoint, surface: string | undefined) {
     }
 }
 
-function setWaypointWayType(point: Waypoint, wayType: string | undefined) {
-    const setter = (point as any).setWayType as ((wayType?: string) => void) | undefined;
+function setWaypointWayType(point: Waypoint, wayType: { type: string, scale: number | undefined} | undefined) {
+    const setter = (point as any).setWayType as ((wayType?: { type: string, scale: number | undefined}) => void) | undefined;
     if (typeof setter === "function") {
         setter.call(point, wayType);
     } else if (wayType === undefined) {
@@ -469,7 +521,8 @@ export async function fetchSurfaceDataForGPX(
 
 export async function fetchWayTypeDataForGPX(
     route: GPX,
-    costingBody: Record<string, unknown> | undefined = undefined
+    costingBody: Record<string, unknown> | undefined = undefined,
+    hiking: boolean | undefined
 ): Promise<TrailWayTypes | undefined> {
     const { wayTypes } = await fetchRouteClassificationsForGPX(route, costingBody);
     return wayTypes;
@@ -495,7 +548,7 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
     let shapePoints: ValhallaShapePoint[] = [];
     let duration: number = 0;
     let surfaceTypes: (string | undefined)[] = [];
-    let wayTypes: (string | undefined)[] = [];
+    let wayTypes: ({ type: string, scale: number | undefined} | undefined)[] = [];
 
     if (options.autoRouting) {
         let costingBody;

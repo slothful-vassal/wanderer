@@ -10,13 +10,18 @@ const TrailSurfaceSchema = z.object({
     summary: z.record(z.number()).optional(),
 });
 
+const TrailWayTypeSummarySchema = z.object({
+    type: z.record(z.number()).optional(),
+    scale: z.record(z.number()).optional(),
+});
+
 const TrailWayTypesSchema = z.object({
     perPoint: z.array(z.object({
         lat: z.number().min(-90).max(90).optional(),
         lon: z.number().min(-180).max(180).optional(),
         type: z.string().optional(),
     })).optional(),
-    summary: z.record(z.number()).optional(),
+    summary: TrailWayTypeSummarySchema.optional(),
 });
 
 const TrailCreateSchema = z.object({

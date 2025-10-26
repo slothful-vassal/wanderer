@@ -4,7 +4,7 @@
     import TrailDropdown from "$lib/components/trail/trail_dropdown.svelte";
     import { Comment } from "$lib/models/comment";
     import GPX from "$lib/models/gpx/gpx";
-    import type { Trail } from "$lib/models/trail";
+    import type { Trail, TrailWayTypeSummary } from "$lib/models/trail";
 
     import {
         comments,
@@ -109,12 +109,30 @@
     let fullDescription: boolean = $state(false);
     let trailAttributesLoading = false;
 
+    function hasWayTypeSummaryData(summary: TrailWayTypeSummary | Record<string, number> | undefined): boolean {
+        if (!summary) {
+            return false;
+        }
+
+        if ("type" in summary || "scale" in summary) {
+            const typedSummary = summary as TrailWayTypeSummary;
+            return (
+                Object.keys(typedSummary.type ?? {}).length > 0 ||
+                Object.keys(typedSummary.scale ?? {}).length > 0
+            );
+        }
+
+        return Object.keys(summary).length > 0;
+    }
+
     function hasTrailAttributesData(surface: Trail["surface"] | undefined, wayTypes: Trail["way_type"] | undefined): boolean {
         if (!surface || !wayTypes) {
             return false;
         }
         const hasPerPoint = (surface.perPoint?.length ?? 0) > 0 && (wayTypes.perPoint?.length ?? 0) > 0;
-        const hasSummary = Object.keys(surface.summary ?? {}).length > 0 && Object.keys(wayTypes.summary ?? {}).length > 0;
+        const hasSummary =
+            Object.keys(surface.summary ?? {}).length > 0 &&
+            hasWayTypeSummaryData(wayTypes.summary);
 
         return hasPerPoint || hasSummary;
     }
@@ -149,8 +167,6 @@
             
             const { surface, wayTypes } = await fetchRouteClassificationsForGPX(gpx, costingBody);
 
-    console.warn(surface)
-    console.error(wayTypes)
             if (!surface || !wayTypes) {
                 return;
             }

@@ -16,7 +16,7 @@ export default class Waypoint {
   sym?: string;
   type?: string;
   surface?: string;
-  wayType?: string;
+  wayType?: { type: string, scale: number | undefined};
   sat?: string;
   hdop?: string;
   vdop?: string;
@@ -43,8 +43,7 @@ export default class Waypoint {
     sym?: string,
     type?: string,
     surface?: string,
-    wayType?: string,
-    way_type?: string,
+    wayType?: { type: string, scale: number | undefined},
     sat?: string,
     hdop?: string,
     vdop?: string,
@@ -70,7 +69,7 @@ export default class Waypoint {
     this.sym = object.sym;
     this.type = object.type;
     this.setSurface(object.surface);
-    this.setWayType(object.wayType ?? object.way_type);
+    this.setWayType(object.wayType);
     this.sat = object.sat;
     this.hdop = object.hdop;
     this.vdop = object.vdop;
@@ -95,7 +94,7 @@ export default class Waypoint {
     });
   }
 
-  setWayType(wayType?: string) {
+  setWayType(wayType?: { type: string, scale: number | undefined}) {
     Object.defineProperty(this, "wayType", {
       value: wayType,
       writable: true,
