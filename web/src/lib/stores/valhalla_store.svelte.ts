@@ -49,8 +49,9 @@ function buildSurfaceFromRoute(route: GPX): TrailSurface {
                 if (!lat || !lon || !Number.isFinite(lat) || !Number.isFinite(lon)) {
                     continue;
                 }
-                
+
                 perPoint.push({ lat, lon, type: point.surface });
+                currentSurface = point.surface;
             }
         }
     }
