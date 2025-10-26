@@ -127,6 +127,7 @@ interface ValhallaTraceAttributesEdge {
     surface?: string
     road_class?: string
     sac_scale?: string
+    use?: string
 }
 
 interface ValhallaTraceAttributesResponse {

@@ -263,6 +263,7 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
                 "edge.surface",
                 "edge.road_class",
                 "edge.sac_scale",
+                "edge.use",
                 "edge.begin_shape_index",
                 "edge.end_shape_index"
             ],
@@ -286,11 +287,11 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
             }
         }
 
-        const surfaceResponse: ValhallaTraceAttributesResponse = await response.json();
+        const trailAttributesResponse: ValhallaTraceAttributesResponse = await response.json();
         const surfaces = Array<string | undefined>(shapePoints.length).fill(undefined);
         const wayTypes = Array<string | undefined>(shapePoints.length).fill(undefined);
 
-        for (const edge of surfaceResponse.edges ?? []) {
+        for (const edge of trailAttributesResponse.edges ?? []) {
             if (typeof edge.begin_shape_index !== "number" || typeof edge.end_shape_index !== "number") {
                 continue;
             }
@@ -304,6 +305,9 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
                 }
                 if (edge.road_class) {
                     wayTypes[i] = edge.road_class;
+                }
+                if (edge.use && edge.use == "ferry") {
+                    wayTypes[i] = edge.use;
                 }
             }
         }
