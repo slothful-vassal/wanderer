@@ -25,9 +25,9 @@
     import emptyStateTrailDark from "$lib/assets/svgs/empty_states/empty_state_trail_dark.svg";
     import emptyStateTrailLight from "$lib/assets/svgs/empty_states/empty_state_trail_light.svg";
     import { theme } from "$lib/stores/theme_store";
-    import { trail as trailStore, trails_persist_surface } from "$lib/stores/trail_store";
+    import { trail as trailStore, trails_persist_attributes } from "$lib/stores/trail_store";
     import { show_toast } from "$lib/stores/toast_store.svelte";
-    import { fetchSurfaceDataForGPX } from "$lib/stores/valhalla_store.svelte";
+    import { fetchRouteClassificationsForGPX } from "$lib/stores/valhalla_store.svelte";
     import * as M from "maplibre-gl";
     import "photoswipe/style.css";
     import { onMount } from "svelte";
@@ -107,23 +107,24 @@
     let summitLogCreateLoading: boolean = $state(false);
 
     let fullDescription: boolean = $state(false);
-    let surfaceLoading = false;
+    let trailAttributesLoading = false;
 
-    function hasSurfaceData(surface: Trail["surface"] | undefined): boolean {
-        if (!surface) {
+    function hasTrailAttributesData(surface: Trail["surface"] | undefined, wayTypes: Trail["way_type"] | undefined): boolean {
+        if (!surface || !wayTypes) {
             return false;
         }
-        const hasPerPoint = (surface.perPoint?.length ?? 0) > 0;
-        const hasSummary = Object.keys(surface.summary ?? {}).length > 0;
+        const hasPerPoint = (surface.perPoint?.length ?? 0) > 0 && (wayTypes.perPoint?.length ?? 0) > 0;
+        const hasSummary = Object.keys(surface.summary ?? {}).length > 0 && Object.keys(wayTypes.summary ?? {}).length > 0;
+
         return hasPerPoint || hasSummary;
     }
 
-    async function ensureSurfaceData() {
-        if (!browser || surfaceLoading) {
+    async function ensureTrailAttributesData() {
+        if (!browser || trailAttributesLoading) {
             return;
         }
 
-        if (hasSurfaceData(trail.surface)) {
+        if (hasTrailAttributesData(trail.surface, trail.way_type)) {
             return;
         }
 
@@ -132,7 +133,7 @@
             return;
         }
 
-        surfaceLoading = true;
+        trailAttributesLoading = true;
         try {
             const gpx = trail.expand?.gpx ? trail.expand.gpx : GPX.parse(gpxData);
 
@@ -146,18 +147,23 @@
                     break;
             }
             
-            const surface = await fetchSurfaceDataForGPX(gpx, costingBody);
-            if (!surface) {
+            const { surface, wayTypes } = await fetchRouteClassificationsForGPX(gpx, costingBody);
+
+    console.warn(surface)
+    console.error(wayTypes)
+            if (!surface || !wayTypes) {
                 return;
             }
 
             trail.surface = surface;
+            trail.way_type = wayTypes;
+
             trail.expand ??= {};
             trail.expand.gpx = gpx;
             trailStore.set(trail);
-            
+            trails_persist_attributes
             try {
-                await trails_persist_surface(trail, surface);
+                await trails_persist_attributes(trail, surface, wayTypes);
             } catch (persistError) {
                 console.warn("Unable to persist surface data for trail", persistError);
             }
@@ -165,12 +171,12 @@
         } catch (error) {
             console.warn("Unable to populate surface data for trail", error);
         } finally {
-            surfaceLoading = false;
+            trailAttributesLoading = false;
         }
     }
 
     onMount(() => {
-        void ensureSurfaceData();
+        void ensureTrailAttributesData();
     });
 
     $effect(() => {
@@ -180,16 +186,17 @@
         const trailId = trail.id;
         const gpxData = trail.expand?.gpx_data;
         const surface = trail.surface;
+        const wayTypes = trail.way_type;
 
         if (!trailId || !gpxData) {
             return;
         }
 
-        if (hasSurfaceData(surface)) {
+        if (hasTrailAttributesData(surface, wayTypes)) {
             return;
         }
 
-        void ensureSurfaceData();
+        void ensureTrailAttributesData();
     });
 
     function openMarkerPopup(i: number) {

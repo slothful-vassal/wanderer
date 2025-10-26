@@ -16,6 +16,7 @@ export default class Waypoint {
   sym?: string;
   type?: string;
   surface?: string;
+  wayType?: string;
   sat?: string;
   hdop?: string;
   vdop?: string;
@@ -42,6 +43,8 @@ export default class Waypoint {
     sym?: string,
     type?: string,
     surface?: string,
+    wayType?: string,
+    way_type?: string,
     sat?: string,
     hdop?: string,
     vdop?: string,
@@ -67,6 +70,7 @@ export default class Waypoint {
     this.sym = object.sym;
     this.type = object.type;
     this.setSurface(object.surface);
+    this.setWayType(object.wayType ?? object.way_type);
     this.sat = object.sat;
     this.hdop = object.hdop;
     this.vdop = object.vdop;
@@ -91,6 +95,15 @@ export default class Waypoint {
     });
   }
 
+  setWayType(wayType?: string) {
+    Object.defineProperty(this, "wayType", {
+      value: wayType,
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
   toGeoJSON(): GeoJSON.Feature {
     return {
       type: "Feature",
@@ -104,6 +117,7 @@ export default class Waypoint {
         time: this.time?.toISOString(),
         type: this.type,
         surface: this.surface,
+        wayType: this.wayType,
         sym: this.sym
       }
     };

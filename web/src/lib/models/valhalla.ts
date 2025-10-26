@@ -125,6 +125,8 @@ interface ValhallaTraceAttributesEdge {
     begin_shape_index?: number
     end_shape_index?: number
     surface?: string
+    road_class?: string
+    sac_scale?: string
 }
 
 interface ValhallaTraceAttributesResponse {

@@ -19,6 +19,17 @@ type TrailSurfacePoint = {
     type?: string;
 }
 
+type TrailWayTypes = {
+    perPoint?: TrailWayTypePoint[];
+    summary?: Record<string, number>;
+};
+
+type TrailWayTypePoint = {
+    lat?: number;
+    lon?: number;
+    type?: string;
+}
+
 class Trail {
     id?: string;
     name: string;
@@ -38,6 +49,7 @@ class Trail {
     created?: string;
     updated?: string;
     surface?: TrailSurface;
+    way_type?: TrailWayTypes;
     category?: string;
     tags: string[];
     polyline?: string;
@@ -84,7 +96,8 @@ class Trail {
             tags?: string[],
             description?: string
             created?: string,
-            surface?: TrailSurface
+            surface?: TrailSurface,
+            way_type?: TrailWayTypes,
         }
 
     ) {
@@ -103,6 +116,7 @@ class Trail {
         this.thumbnail = params?.thumbnail ?? 0;
         this.photos = params?.photos ?? [];
         this.surface = params?.surface;
+        this.way_type = params?.way_type;
         this.tags = []
         this.gpx = params?.gpx;
         this.like_count = 0
@@ -239,5 +253,7 @@ export type {
     TrailSearchResult,
     TrailSurface,
     TrailSurfacePoint,
+    TrailWayTypePoint,
+    TrailWayTypes,
 };
 

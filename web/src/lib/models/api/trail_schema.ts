@@ -10,6 +10,15 @@ const TrailSurfaceSchema = z.object({
     summary: z.record(z.number()).optional(),
 });
 
+const TrailWayTypesSchema = z.object({
+    perPoint: z.array(z.object({
+        lat: z.number().min(-90).max(90).optional(),
+        lon: z.number().min(-180).max(180).optional(),
+        type: z.string().optional(),
+    })).optional(),
+    summary: z.record(z.number()).optional(),
+});
+
 const TrailCreateSchema = z.object({
     id: z.string().length(15).optional(),
     name: z.string().min(1, "required"),
@@ -32,6 +41,7 @@ const TrailCreateSchema = z.object({
     gpx: z.string().optional(),
     author: z.string().length(15),
     surface: TrailSurfaceSchema.optional(),
+    way_type: TrailWayTypesSchema.optional(),
 }) satisfies ZodType<Partial<Trail>>
 
 const TrailUpdateSchema = z.object({
@@ -56,6 +66,7 @@ const TrailUpdateSchema = z.object({
     tags: z.array(z.string()).optional(),
     gpx: z.string().optional(),
     surface: TrailSurfaceSchema.optional(),
+    way_type: TrailWayTypesSchema.optional(),
 }) satisfies ZodType<Partial<Trail>>
 
 const TrailRecommendSchema = z.object({
