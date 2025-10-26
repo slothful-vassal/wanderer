@@ -41,7 +41,7 @@ const TrailCreateSchema = z.object({
     tags: z.array(z.string()).default([]),
     gpx: z.string().optional(),
     author: z.string().length(15),
-    trailAttributes: TrailAttributesSchema.optional(),
+    attributes: TrailAttributesSchema.optional(),
 }) satisfies ZodType<Partial<Trail>>
 
 const TrailUpdateSchema = z.object({
@@ -65,7 +65,7 @@ const TrailUpdateSchema = z.object({
     category: z.string().optional(),
     tags: z.array(z.string()).optional(),
     gpx: z.string().optional(),
-    trailAttributes: TrailAttributesSchema.optional(),
+    attributes: TrailAttributesSchema.optional(),
 }) satisfies ZodType<Partial<Trail>>
 
 const TrailRecommendSchema = z.object({

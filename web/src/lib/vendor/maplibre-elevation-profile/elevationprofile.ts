@@ -211,7 +211,7 @@ function computeSurfaceSeriesFromTrailAttributes(
         
     const breakpoints = (attributesData?.perPoint ?? [])
         .map((attributesPoint) => {
-            if (!attributesPoint || !attributesPoint.type || !attributesPoint.lat || !attributesPoint.lon) {
+            if (!attributesPoint || !attributesPoint.surface || !attributesPoint.lat || !attributesPoint.lon) {
                 return null;
             }
 

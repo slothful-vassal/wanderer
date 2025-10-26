@@ -228,7 +228,7 @@
                 }
 
                 const attribute = createTrailAttributesDataFromRoute(valhallaStore.route);
-                form.trailAttributes = attribute;
+                form.attributes = attribute;
 
                 if (page.params.id === "new" && !savedAtLeastOnce) {
                     const createdTrail = await trails_create(
@@ -356,7 +356,7 @@
         }
 
         if (
-            hasTrailAttributesData($formData.trailAttributes as TrailAttributes | undefined) ||
+            hasTrailAttributesData($formData.attributes as TrailAttributes | undefined) ||
             hasTrailAttributesData(valhallaStore.attributes)
         ) {
             return;
@@ -512,7 +512,7 @@
         const attribute = createTrailAttributesDataFromRoute(valhallaStore.route);
         formData.set({
             ...$formData,
-            trailAttributes: attribute
+            attributes: attribute
         });
         return attribute;
     }
@@ -538,7 +538,7 @@
                     gpx.rte = undefined;
                 }
 
-                applyTrailAttributesToGPXInstance(gpx, $formData.trailAttributes as TrailAttributes | undefined);
+                applyTrailAttributesToGPXInstance(gpx, $formData.attributes as TrailAttributes | undefined);
                 setRoute(gpx);
                 initRouteAnchors(gpx);
                 const attributes = updateTrailAttributesFieldsFromRoute();
@@ -1328,7 +1328,7 @@
         const t: Trail = JSON.parse(JSON.stringify($formData));
         t.expand!.gpx = valhallaStore.route;
 
-        t.attributes = attributeOverride ?? ($formData.trailAttributes as TrailAttributes | undefined);
+        t.attributes = attributeOverride ?? ($formData.attributes as TrailAttributes | undefined);
 
         mapTrail = [t];
     }
