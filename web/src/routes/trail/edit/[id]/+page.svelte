@@ -41,6 +41,7 @@
         clearRoute,
         deleteFromRoute,
         editRoute,
+        fetchSurfaceDataForGPX,
         insertIntoRoute,
         normalizeRouteTime,
         recalculateHeight,
@@ -124,6 +125,7 @@
     let drawingActive = $state(false);
     let overwriteGPX = false;
     let draggingMarker = false;
+    let surfaceLoading = $state(false);
 
     let searchDropdownItems: SearchItem[] = $state([]);
 
@@ -266,6 +268,15 @@
         },
     });
 
+    function hasSurfaceData(surface: TrailSurface | undefined): boolean {
+        if (!surface) {
+            return false;
+        }
+        const hasPerPoint = (surface.perPoint?.length ?? 0) > 0;
+        const hasSummary = Object.keys(surface.summary ?? {}).length > 0;
+        return hasPerPoint || hasSummary;
+    }
+
     function flattenRoutePoints(gpx: GPX): Array<{ point: GPXWaypoint; lat?: number; lon?: number }> {
         const points: Array<{ point: GPXWaypoint; lat?: number; lon?: number }> = [];
         for (const track of gpx.trk ?? []) {
@@ -276,6 +287,89 @@
             }
         }
         return points;
+    }
+
+    function resolveCostingBody(): Record<string, unknown> {
+        if (routingOptions.autoRouting) {
+            switch (routingOptions.modeOfTransport) {
+                case "bicycle":
+                    return routingOptions.bicycleOptions
+                        ? {
+                              costing: "bicycle",
+                              costing_options: {
+                                  bicycle: routingOptions.bicycleOptions,
+                              },
+                          }
+                        : { costing: "bicycle" };
+                case "auto":
+                    return routingOptions.autoOptions
+                        ? {
+                              costing: "auto",
+                              costing_options: {
+                                  auto: routingOptions.autoOptions,
+                              },
+                          }
+                        : { costing: "auto" };
+                case "pedestrian":
+                default:
+                    return routingOptions.pedestrianOptions
+                        ? {
+                              costing: "pedestrian",
+                              costing_options: {
+                                  pedestrian: routingOptions.pedestrianOptions,
+                              },
+                          }
+                        : { costing: "pedestrian" };
+            }
+        }
+
+        if ($formData.category === "7u4d6b446po42f0") {
+            return { costing: "bicycle" };
+        }
+
+        return { costing: "pedestrian" };
+    }
+
+    async function ensureSurfaceDataForRoute() {
+        if (surfaceLoading) {
+            return;
+        }
+
+        if (
+            hasSurfaceData($formData.surface as TrailSurface | undefined) ||
+            hasSurfaceData(valhallaStore.surface)
+        ) {
+            return;
+        }
+
+        const flattenedRoute = flattenRoutePoints(valhallaStore.route);
+        if (flattenedRoute.length < 2) {
+            return;
+        }
+
+        surfaceLoading = true;
+        try {
+            const costingBody = resolveCostingBody();
+            const surface = await fetchSurfaceDataForGPX(
+                valhallaStore.route,
+                costingBody,
+            );
+
+            if (!surface) {
+                return;
+            }
+
+            valhallaStore.surface = surface;
+            const surfaceData = updateSurfaceFieldFromRoute() ?? surface;
+            updateTrailOnMap(surfaceData);
+        } catch (error) {
+            console.warn(
+                "Unable to retrieve surface data for route editing",
+                error,
+            );
+        } finally {
+            surfaceLoading = false;
+        }
     }
 
     function applySurfaceToGPXInstance(gpx: GPX, surface?: TrailSurface) {
@@ -432,6 +526,7 @@
                 initRouteAnchors(gpx);
                 const surfaceData = updateSurfaceFieldFromRoute();
                 updateTrailOnMap(surfaceData);
+                await ensureSurfaceDataForRoute();
             }
         }
     });
@@ -511,6 +606,7 @@
             initRouteAnchors(parseResult.gpx);
 
             updateTrailOnMap(surfaceData);
+            await ensureSurfaceDataForRoute();
         } catch (e) {
             console.error(e);
 

@@ -3,7 +3,7 @@ import Track from "$lib/models/gpx/track";
 import TrackSegment from "$lib/models/gpx/track-segment";
 import { haversineDistance } from "$lib/models/gpx/utils";
 import Waypoint from "$lib/models/gpx/waypoint";
-import type { TrailSurface } from "$lib/models/trail";
+import type { TrailSurface, TrailSurfacePoint } from "$lib/models/trail";
 import { type RoutingOptions, type ValhallaAnchor, type ValhallaHeightResponse, type ValhallaRouteResponse, type ValhallaTraceAttributesResponse } from "$lib/models/valhalla";
 import { APIError } from "$lib/util/api_util";
 import { decodePolyline } from "$lib/util/polyline_util";
@@ -25,28 +25,41 @@ class ValhallaStore {
 export const valhallaStore = new ValhallaStore();
 
 function buildSurfaceFromRoute(route: GPX): TrailSurface {
-    const surface: TrailSurface = {};
     const summary: Record<string, number> = {};
+    const perPoint: TrailSurfacePoint[] = [];
 
     for (const track of route.trk ?? []) {
         for (const segment of track.trkseg ?? []) {
-            if (!segment.trkpt?.length) {
+            const points = segment.trkpt ?? [];
+            if (!points.length) {
                 continue;
             }
-            mergeSurfaceSummaries(summary, summarizeSurfaceLengths(segment.trkpt));
 
-            if (!surface.perPoint) {
-                surface.perPoint = [];
+            mergeSurfaceSummaries(summary, summarizeSurfaceLengths(points));
+
+            let currentSurface: string | undefined;
+            for (const point of points) {
+                if (!point.surface || point.surface == currentSurface) {
+                    continue;
+                }
+
+                const lat = point.$.lat;
+                const lon = point.$.lon;
+
+                if (!lat || !lon || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+                    continue;
+                }
+                
+                perPoint.push({ lat, lon, type: point.surface });
             }
-            segment.trkpt.forEach((t) => {
-                surface.perPoint?.push({lat: t.$.lat, lon: t.$.lon});
-            });
         }
     }
 
-    surface.summary = summary;
+    if (perPoint.length == 0) {
+        return {};
+    }
 
-    return surface;
+    return { perPoint: perPoint, summary: summary };
 }
 
 function summarizeSurfaceLengths(points: Waypoint[]): Record<string, number> {
@@ -110,6 +123,7 @@ type ValhallaShapePoint = { lat: number; lon: number };
 
 
 const UNKNOWN_SURFACE = "unknown";
+const VALHALLA_MAX_PATH_LENGTH_METERS = 150_000;    // 200_000 specified, but ensure rounding differences
 
 function accumulateSurfaceLength(summary: Record<string, number>, surface: string | undefined, length: number) {
     if (!Number.isFinite(length) || length <= 0) {
@@ -120,9 +134,47 @@ function accumulateSurfaceLength(summary: Record<string, number>, surface: strin
     summary[key] = (summary[key] ?? 0) + length;
 }
 
-async function fetchSurfaceTypesForShape(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<(string | undefined)[]> {
+type ShapeSegment = { start: number; points: ValhallaShapePoint[] };
+
+function splitShapePointsByMaxLength(shapePoints: ValhallaShapePoint[], maxLengthMeters: number): ShapeSegment[] {
+    if (shapePoints.length === 0) {
+        return [];
+    }
+
+    const segments: ShapeSegment[] = [];
+    let segmentStart = 0;
+    let accumulatedLength = 0;
+
+    for (let i = 1; i < shapePoints.length; i++) {
+        const previous = shapePoints[i - 1];
+        const current = shapePoints[i];
+        const edgeLength = haversineDistance(previous.lat, previous.lon, current.lat, current.lon);
+
+        if (accumulatedLength + edgeLength > maxLengthMeters && i - segmentStart >= 2) {
+            segments.push({ start: segmentStart, points: shapePoints.slice(segmentStart, i) });
+            segmentStart = i - 1;
+            accumulatedLength = edgeLength;
+        } else {
+            accumulatedLength += edgeLength;
+        }
+    }
+
+    segments.push({ start: segmentStart, points: shapePoints.slice(segmentStart) });
+
+    return segments;
+}
+
+async function requestSurfaceTypesForShapeSegment(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<(string | undefined)[]> {
     if (!shapePoints.length) {
         return [];
+    }
+
+    if (!costingBody) {
+        return [];
+    }
+
+    if (shapePoints.length < 2) {
+        return Array<string | undefined>(shapePoints.length).fill(undefined);
     }
 
     const body = {
@@ -136,7 +188,7 @@ async function fetchSurfaceTypesForShape(shapePoints: ValhallaShapePoint[], cost
             ],
             action: "include"
         },
-        ...(costingBody ?? {})
+        ...costingBody
     };
 
     try {
@@ -149,7 +201,7 @@ async function fetchSurfaceTypesForShape(shapePoints: ValhallaShapePoint[], cost
             try {
                 const details = await response.json();
                 console.warn("Failed to retrieve surface data", details);
-            } finally { 
+            } finally {
                 return [];
             }
         }
@@ -180,6 +232,129 @@ async function fetchSurfaceTypesForShape(shapePoints: ValhallaShapePoint[], cost
         console.warn("Unable to fetch Valhalla surface data", error);
         return [];
     }
+}
+
+async function fetchSurfaceTypesForShape(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<(string | undefined)[]> {
+    if (!shapePoints.length) {
+        return [];
+    }
+
+    if (!costingBody) {
+        return [];
+    }
+
+    const segments = splitShapePointsByMaxLength(shapePoints, VALHALLA_MAX_PATH_LENGTH_METERS);
+
+    if (segments.length <= 1) {
+        return requestSurfaceTypesForShapeSegment(shapePoints, costingBody);
+    }
+
+    const aggregatedSurfaces = Array<string | undefined>(shapePoints.length).fill(undefined);
+
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
+        const { start, points } = segments[segmentIndex];
+
+        if (points.length < 2) {
+            continue;
+        }
+
+        const segmentSurfaces = await requestSurfaceTypesForShapeSegment(points, costingBody);
+
+        if (!segmentSurfaces.length) {
+            continue;
+        }
+
+        for (let localIndex = 0; localIndex < segmentSurfaces.length; localIndex++) {
+            const globalIndex = start + localIndex;
+
+            if (globalIndex >= aggregatedSurfaces.length) {
+                break;
+            }
+
+            const surface = segmentSurfaces[localIndex];
+            if (surface === undefined) {
+                continue;
+            }
+
+            if (segmentIndex > 0 && localIndex === 0 && aggregatedSurfaces[globalIndex] !== undefined) {
+                continue;
+            }
+
+            aggregatedSurfaces[globalIndex] = surface;
+        }
+    }
+
+    return aggregatedSurfaces;
+}
+
+function setWaypointSurface(point: Waypoint, surface: string | undefined) {
+    const setter = (point as any).setSurface as ((surface?: string) => void) | undefined;
+    if (typeof setter === "function") {
+        setter.call(point, surface);
+    } else if (surface === undefined) {
+        delete (point as any).surface;
+    } else {
+        point.surface = surface;
+    }
+}
+
+function extractRoutePoints(route: GPX): Array<{ point: Waypoint; lat: number; lon: number }> {
+    const result: Array<{ point: Waypoint; lat: number; lon: number }> = [];
+    const points = route.flatten();
+
+    for (const point of points) {
+        const lat = point.$.lat;
+        const lon = point.$.lon;
+
+        if (!lat || !lon || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+            continue;
+        }
+
+        result.push({ point, lat, lon });
+    }
+
+    return result;
+}
+
+export async function fetchSurfaceDataForGPX(
+    route: GPX,
+    costingBody: Record<string, unknown> | undefined = undefined
+): Promise<TrailSurface | undefined> {
+    const pointEntries = extractRoutePoints(route);
+
+    if (pointEntries.length < 2) {
+        return undefined;
+    }    
+
+    const shapePoints = pointEntries.map(({ lat, lon }) => ({ lat, lon }));
+    const surfaces = await fetchSurfaceTypesForShape(shapePoints, costingBody);
+
+    if (!surfaces?.length) {
+        return undefined;
+    }
+
+    let assigned = false;
+
+    for (let i = 0; i < pointEntries.length && i < surfaces.length; i += 1) {
+        if (!surfaces[i]) {
+            continue;
+        }
+
+        const { point } = pointEntries[i];
+        setWaypointSurface(point, surfaces[i]);
+        assigned = true;
+    }
+
+    if (!assigned) {
+        return undefined;
+    }
+
+    const surface = buildSurfaceFromRoute(route);
+    if (!surface.perPoint?.length && !surface.summary) {
+        return undefined;
+    }
+
+    return surface;
 }
 
 

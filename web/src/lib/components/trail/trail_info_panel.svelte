@@ -3,6 +3,7 @@
     import Tabs from "$lib/components/base/tabs.svelte";
     import TrailDropdown from "$lib/components/trail/trail_dropdown.svelte";
     import { Comment } from "$lib/models/comment";
+    import GPX from "$lib/models/gpx/gpx";
     import type { Trail } from "$lib/models/trail";
 
     import {
@@ -24,7 +25,9 @@
     import emptyStateTrailDark from "$lib/assets/svgs/empty_states/empty_state_trail_dark.svg";
     import emptyStateTrailLight from "$lib/assets/svgs/empty_states/empty_state_trail_light.svg";
     import { theme } from "$lib/stores/theme_store";
+    import { trail as trailStore } from "$lib/stores/trail_store";
     import { show_toast } from "$lib/stores/toast_store.svelte";
+    import { fetchSurfaceDataForGPX } from "$lib/stores/valhalla_store.svelte";
     import * as M from "maplibre-gl";
     import "photoswipe/style.css";
     import { onMount } from "svelte";
@@ -104,8 +107,84 @@
     let summitLogCreateLoading: boolean = $state(false);
 
     let fullDescription: boolean = $state(false);
+    let surfaceLoading = false;
 
-    onMount(async () => {});
+    function hasSurfaceData(surface: Trail["surface"] | undefined): boolean {
+        if (!surface) {
+            return false;
+        }
+        const hasPerPoint = (surface.perPoint?.length ?? 0) > 0;
+        const hasSummary = Object.keys(surface.summary ?? {}).length > 0;
+        return hasPerPoint || hasSummary;
+    }
+
+    async function ensureSurfaceData() {
+        if (!browser || surfaceLoading) {
+            return;
+        }
+
+        if (hasSurfaceData(trail.surface)) {
+            return;
+        }
+
+        const gpxData = trail.expand?.gpx_data;
+        if (!gpxData) {
+            return;
+        }
+
+        surfaceLoading = true;
+        try {
+            const gpx = trail.expand?.gpx ? trail.expand.gpx : GPX.parse(gpxData);
+
+            let costingBody;
+            switch (trail.category) {
+                case "7u4d6b446po42f0": // biking
+                    costingBody = { "costing": "bicycle" }
+                    break;
+                default:
+                    costingBody = { "costing": "pedestrian" }
+                    break;
+            }
+            
+            const surface = await fetchSurfaceDataForGPX(gpx, costingBody);
+            if (!surface) {
+                return;
+            }
+
+            trail.surface = surface;
+            trail.expand ??= {};
+            trail.expand.gpx = gpx;
+            trailStore.set(trail);
+            
+        } catch (error) {
+            console.warn("Unable to populate surface data for trail", error);
+        } finally {
+            surfaceLoading = false;
+        }
+    }
+
+    onMount(() => {
+        void ensureSurfaceData();
+    });
+
+    $effect(() => {
+        if (!browser) {
+            return;
+        }
+        const trailId = trail.id;
+        const gpxData = trail.expand?.gpx_data;
+        const surface = trail.surface;
+
+        if (!trailId || !gpxData) {
+            return;
+        }
+
+        if (hasSurfaceData(surface)) {
+            return;
+        }
+
+        void ensureSurfaceData();
+    });
 
     function openMarkerPopup(i: number) {
         if ((markers[i] as M.Marker).getPopup().isOpen()) {
