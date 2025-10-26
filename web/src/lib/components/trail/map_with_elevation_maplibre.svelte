@@ -2,7 +2,7 @@
     import { page } from "$app/state";
     import directionCaret from "$lib/assets/svgs/caret-right-solid.svg";
     import GPX from "$lib/models/gpx/gpx";
-    import type { Trail, TrailSurface } from "$lib/models/trail";
+    import type { Trail } from "$lib/models/trail";
     import type { Waypoint } from "$lib/models/waypoint";
     import { theme } from "$lib/stores/theme_store";
     import { fetchGPX } from "$lib/stores/trail_store";
@@ -290,7 +290,7 @@
 
     export function refreshElevationProfile() {
         if (activeTrail !== null && data[activeTrail]) {
-            epc?.setData(data[activeTrail]!, waypoints, trails[activeTrail]?.surface);
+            epc?.setData(data[activeTrail]!, waypoints, trails[activeTrail]?.attributes );
         }
     }
 

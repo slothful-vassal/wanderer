@@ -1,6 +1,6 @@
 import type { SummitLog } from "$lib/models/summit_log";
 import type { Tag } from "$lib/models/tag";
-import { defaultTrailSearchAttributes, Trail, type TrailFilter, type TrailFilterValues, type TrailSearchResult, type TrailSurface, type TrailWayTypes } from "$lib/models/trail";
+import { defaultTrailSearchAttributes, Trail, type TrailAttributes, type TrailFilter, type TrailFilterValues, type TrailSearchResult } from "$lib/models/trail";
 import type { Waypoint } from "$lib/models/waypoint";
 import { APIError } from "$lib/util/api_util";
 import { deepEqual } from "$lib/util/deep_util";
@@ -180,7 +180,7 @@ export async function trails_show(id: string, handle?: string, share?: string, l
     return response as Trail;
 }
 
-export async function trails_persist_attributes(trailModel: Trail, surface: TrailSurface, wayTypes: TrailWayTypes, f: (url: RequestInfo | URL, config?: RequestInit) => Promise<Response> = fetch) {
+export async function trails_persist_attributes(trailModel: Trail, attributes: TrailAttributes, f: (url: RequestInfo | URL, config?: RequestInit) => Promise<Response> = fetch) {
     if (!trailModel.id) {
         return;
     }
@@ -192,8 +192,7 @@ export async function trails_persist_attributes(trailModel: Trail, surface: Trai
         },
         body: JSON.stringify({
             name: trailModel.name,
-            surface,
-            way_type: wayTypes,
+            attributes: attributes,
         }),
     });
 
@@ -203,19 +202,18 @@ export async function trails_persist_attributes(trailModel: Trail, surface: Trai
     }
 
     const updated: Trail = await r.json();
-    const normalizedSurface = updated.surface ?? surface;
-    const normalizedWayTypes = updated.way_type ?? wayTypes;
+    const normalizedAttributes = updated.attributes ?? attributes;
 
     const index = trails.findIndex((t) => t.id === updated.id);
     if (index !== -1) {
-        trails[index] = { ...trails[index], surface: normalizedSurface, way_type: normalizedWayTypes };
+        trails[index] = { ...trails[index], attributes: normalizedAttributes };
     }
 
     trail.update((current) => {
         if (current.id !== updated.id) {
             return current;
         }
-        return { ...current, surface: normalizedSurface, way_type: normalizedWayTypes };
+        return { ...current, attributes: normalizedAttributes };
     });
 }
 
@@ -238,12 +236,8 @@ export async function trails_create(trail: Trail, photos: File[], gpx: File | Bl
 
     const formData = objectToFormData(trail, ["surface", "way_type"])
 
-    if (trail.surface) {
-        formData.set("surface", JSON.stringify(trail.surface));
-    }
-
-    if (trail.way_type) {
-        formData.set("way_type", JSON.stringify(trail.way_type));
+    if (trail.attributes) {
+        formData.set("attributes", JSON.stringify(trail.attributes));
     }
 
     if (gpx) {
@@ -344,16 +338,10 @@ export async function trails_update(oldTrail: Trail, newTrail: Trail, photos?: F
 
     const formData = objectToFormData(newTrail, ["expand", "surface", "way_type"])
 
-    if (newTrail.surface) {
-        formData.set("surface", JSON.stringify(newTrail.surface));
-    } else if (oldTrail.surface) {
-        formData.set("surface", JSON.stringify({}));
-    }
-
-    if (newTrail.way_type) {
-        formData.set("way_type", JSON.stringify(newTrail.way_type));
-    } else if (oldTrail.way_type) {
-        formData.set("way_type", JSON.stringify({}));
+    if (newTrail.attributes) {
+        formData.set("attributes", JSON.stringify(newTrail.attributes));
+    } else if (oldTrail.attributes) {
+        formData.set("attributes", JSON.stringify({}));
     }
 
     if (gpx) {

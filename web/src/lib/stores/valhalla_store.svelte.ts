@@ -3,7 +3,7 @@ import Track from "$lib/models/gpx/track";
 import TrackSegment from "$lib/models/gpx/track-segment";
 import { haversineDistance } from "$lib/models/gpx/utils";
 import Waypoint from "$lib/models/gpx/waypoint";
-import type { TrailSurface, TrailSurfacePoint, TrailWayTypeSummary, TrailWayTypes, TrailWayTypePoint } from "$lib/models/trail";
+import type { TrailAttributes, TrailAttributePoint, TrailAttributeSummary } from "$lib/models/trail";
 import { type RoutingOptions, type ValhallaAnchor, type ValhallaHeightResponse, type ValhallaRouteResponse, type ValhallaTraceAttributesResponse } from "$lib/models/valhalla";
 import { APIError } from "$lib/util/api_util";
 import { decodePolyline } from "$lib/util/polyline_util";
@@ -19,20 +19,21 @@ class ValhallaStore {
     anchors: ValhallaAnchor[] = $state([]);
     undoStack: { delta: Changeset, reverseDelta: Changeset }[] = $state([]);
     redoStack: { delta: Changeset, reverseDelta: Changeset }[] = $state([]);
-    surface: TrailSurface = $state({});
-    wayType: TrailWayTypes = $state({});
+    attributes: TrailAttributes = $state({});
 }
 
 export const valhallaStore = new ValhallaStore();
 
-type WayTypeSummaryAccumulator = {
+type TrailAttributeSummaryAccumulator = {
+    surface: Record<string, number>;
     type: Record<string, number>;
-    scale: Record<string, number>;
+    diffScale: Record<string, number>;
 };
 
-function buildSurfaceFromRoute(route: GPX): TrailSurface {
-    const summary: Record<string, number> = {};
-    const perPoint: TrailSurfacePoint[] = [];
+
+function buildTrailAttributesFromRoute(route: GPX): TrailAttributes {
+    const summaryAccumulator = { surface: {}, type: {}, diffScale: {} };
+    const perPoint: TrailAttributePoint[] = [];
 
     for (const track of route.trk ?? []) {
         for (const segment of track.trkseg ?? []) {
@@ -41,53 +42,15 @@ function buildSurfaceFromRoute(route: GPX): TrailSurface {
                 continue;
             }
 
-            mergeClassificationSummaries(summary, summarizeSurfaceLengths(points));
+            mergeTrailAttributeSummaries(summaryAccumulator, summarizeTrailAttributePointLengths(points));
 
-            let currentSurface: string | undefined;
-            for (const point of points) {
-                if (!point.surface || point.surface == currentSurface) {
-                    continue;
-                }
-
-                const lat = point.$.lat;
-                const lon = point.$.lon;
-
-                if (!lat || !lon || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-                    continue;
-                }
-
-                perPoint.push({ lat, lon, type: point.surface });
-                currentSurface = point.surface;
-            }
-        }
-    }
-
-    if (perPoint.length == 0) {
-        return {};
-    }
-
-    return { perPoint: perPoint, summary: summary };
-}
-
-function buildWayTypesFromRoute(route: GPX): TrailWayTypes {
-    const summaryAccumulator = { type: {}, scale: {} };
-    const perPoint: TrailWayTypePoint[] = [];
-
-    for (const track of route.trk ?? []) {
-        for (const segment of track.trkseg ?? []) {
-            const points = segment.trkpt ?? [];
-            if (!points.length) {
-                continue;
-            }
-
-            mergeWayTypeSummaries(summaryAccumulator, summarizeWayTypeLengths(points));
-
-            let currentWayType: { type: string; scale: number | undefined } | undefined;
+            let currentAttributes: TrailAttributePoint | undefined;
             for (const point of points) {
                 if (
-                    !point.wayType ||
-                    (point.wayType.type === currentWayType?.type &&
-                        point.wayType.scale === currentWayType?.scale)
+                    !point.attributes ||
+                    (point.attributes.type === currentAttributes?.type &&
+                        point.attributes.diffScale === currentAttributes?.diffScale &&
+                        point.attributes.surface === currentAttributes?.surface)
                 ) {
                     continue;
                 }
@@ -99,18 +62,18 @@ function buildWayTypesFromRoute(route: GPX): TrailWayTypes {
                     continue;
                 }
 
-                perPoint.push({ lat, lon, type: point.wayType.type, scale: point.wayType.scale });
-                currentWayType = point.wayType;
+                perPoint.push({ lat, lon, surface: point.attributes.surface, type: point.attributes.type, diffScale: point.attributes.diffScale });
+                currentAttributes = point.attributes;
             }
         }
     }
 
-    const result: TrailWayTypes = {};
+    const result: TrailAttributes = {};
     if (perPoint.length) {
         result.perPoint = perPoint;
     }
 
-    const summary = finalizeWayTypeSummary(summaryAccumulator);
+    const summary = finalizeTrailAttributeSummary(summaryAccumulator);
     if (summary) {
         result.summary = summary;
     }
@@ -118,8 +81,8 @@ function buildWayTypesFromRoute(route: GPX): TrailWayTypes {
     return Object.keys(result).length ? result : {};
 }
 
-function summarizeSurfaceLengths(points: Waypoint[]): Record<string, number> {
-    const summary: Record<string, number> = {};
+function summarizeTrailAttributePointLengths(points: Waypoint[]): TrailAttributeSummaryAccumulator {
+    const summary = { surface: {}, type: {}, diffScale: {} };
 
     for (let i = 1; i < points.length; i++) {
         const previous = points[i - 1];
@@ -135,47 +98,30 @@ function summarizeSurfaceLengths(points: Waypoint[]): Record<string, number> {
         }
 
         const segmentLength = haversineDistance(lat1, lon1, lat2, lon2);
-        accumulateSurfaceLength(summary, current.surface ?? previous.surface, segmentLength);
+        accumulateTrailAttributesLength(summary, current.attributes ?? previous.attributes, segmentLength);
     }
     return summary;
 }
 
-function summarizeWayTypeLengths(points: Waypoint[]): WayTypeSummaryAccumulator {
-    const summary = { type: {}, scale: {} };
-
-    for (let i = 1; i < points.length; i++) {
-        const previous = points[i - 1];
-        const current = points[i];
-
-        const lat1 = previous.$.lat;
-        const lon1 = previous.$.lon;
-        const lat2 = current.$.lat;
-        const lon2 = current.$.lon;
-
-        if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) {
-            continue;
-        }
-
-        const segmentLength = haversineDistance(lat1, lon1, lat2, lon2);
-        accumulateWayTypeLength(summary, current.wayType ?? previous.wayType, segmentLength);
-    }
-    return summary;
-}
-
-function mergeWayTypeSummaries(target: WayTypeSummaryAccumulator, addition: WayTypeSummaryAccumulator) {
+function mergeTrailAttributeSummaries(target: TrailAttributeSummaryAccumulator, addition: TrailAttributeSummaryAccumulator) {
+    mergeClassificationSummaries(target.surface, addition.surface);
     mergeClassificationSummaries(target.type, addition.type);
-    mergeClassificationSummaries(target.scale, addition.scale);
+    mergeClassificationSummaries(target.diffScale, addition.diffScale);
 }
 
-function finalizeWayTypeSummary(summary: WayTypeSummaryAccumulator): TrailWayTypeSummary | undefined {
-    const result: TrailWayTypeSummary = {};
+function finalizeTrailAttributeSummary(summary: TrailAttributeSummaryAccumulator): TrailAttributeSummary | undefined {
+    const result: TrailAttributeSummary = {};
+
+    if (hasSummaryEntries(summary.surface)) {
+        result.surface = summary.surface;
+    }
 
     if (hasSummaryEntries(summary.type)) {
         result.type = summary.type;
     }
 
-    if (hasSummaryEntries(summary.scale)) {
-        result.scale = summary.scale;
+    if (hasSummaryEntries(summary.diffScale)) {
+        result.diffScale = summary.diffScale;
     }
 
     return Object.keys(result).length ? result : undefined;
@@ -194,14 +140,13 @@ function mergeClassificationSummaries(target: Record<string, number>, addition: 
     }
 }
 
-function setSurface() {
-    valhallaStore.surface = buildSurfaceFromRoute(valhallaStore.route);
-    valhallaStore.wayType = buildWayTypesFromRoute(valhallaStore.route);
+function setTrailAttributes() {
+    valhallaStore.attributes = buildTrailAttributesFromRoute(valhallaStore.route);
 }
 
 export function clearRoute() {
     valhallaStore.route = new GPX({ trk: [emtpyTrack] });
-    setSurface();
+    setTrailAttributes();
 }
 
 export function clearAnchors() {
@@ -229,31 +174,25 @@ const UNKNOWN_WAY_TYPE = "unknown";
 const UNKNOWN_WAY_SCALE = 0;
 const VALHALLA_MAX_PATH_LENGTH_METERS = 150_000;    // 200_000 specified, but ensure rounding differences
 
-function accumulateSurfaceLength(summary: Record<string, number>, surface: string | undefined, length: number) {
-    if (!Number.isFinite(length) || length <= 0) {
-        return;
-    }
 
-    const key = surface && surface.length ? surface : UNKNOWN_SURFACE;
-    summary[key] = (summary[key] ?? 0) + length;
-}
-
-function accumulateWayTypeLength(
-    summary: WayTypeSummaryAccumulator,
-    wayType: { type: string; scale: number | undefined } | undefined,
+function accumulateTrailAttributesLength(
+    summary: TrailAttributeSummaryAccumulator,
+    attribute: TrailAttributePoint | undefined,
     length: number,
 ) {
     if (!Number.isFinite(length) || length <= 0) {
         return;
     }
 
-    const typeKey = wayType && wayType.type.length ? wayType.type : UNKNOWN_WAY_TYPE;
+    const surfaceKey = attribute && attribute.surface && attribute.surface.length ? attribute.surface : UNKNOWN_SURFACE;
+    summary.surface[surfaceKey] = (summary.surface[surfaceKey] ?? 0) + length;
+
+    const typeKey = attribute && attribute.type && attribute.type.length ? attribute.type : UNKNOWN_WAY_TYPE;
     summary.type[typeKey] = (summary.type[typeKey] ?? 0) + length;
 
-    const scaleValue = wayType?.scale;
-    const scaleKey =
-        scaleValue === undefined || scaleValue === null ? `${UNKNOWN_WAY_SCALE}` : `${scaleValue}`;
-    summary.scale[scaleKey] = (summary.scale[scaleKey] ?? 0) + length;
+    const scaleValue = attribute?.diffScale;
+    const scaleKey = scaleValue === undefined || scaleValue === null ? `${UNKNOWN_WAY_SCALE}` : `${scaleValue}`;
+    summary.diffScale[scaleKey] = (summary.diffScale[scaleKey] ?? 0) + length;
 }
 
 type ShapeSegment = { start: number; points: ValhallaShapePoint[] };
@@ -286,21 +225,13 @@ function splitShapePointsByMaxLength(shapePoints: ValhallaShapePoint[], maxLengt
     return segments;
 }
 
-type RouteAttributes = {
-    surfaces: (string | undefined)[];
-    wayTypes: ({ type: string, scale: number | undefined} | undefined)[];
-};
-
-async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<RouteAttributes> {
+async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<(TrailAttributePoint | undefined)[]> {
     if (!shapePoints.length || !costingBody) {
-        return { surfaces: [], wayTypes: [] };
+        return [];
     }
 
     if (shapePoints.length < 2) {
-        return {
-            surfaces: Array<string | undefined>(shapePoints.length).fill(undefined),
-            wayTypes: Array<{ type: string, scale: number | undefined} | undefined>(shapePoints.length).fill(undefined),
-        };
+        return Array<TrailAttributePoint | undefined>(shapePoints.length).fill(undefined);
     }
 
     const body = {
@@ -331,13 +262,12 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
                 const details = await response.json();
                 console.warn("Failed to retrieve route attribute data", details);
             } finally {
-                return { surfaces: [], wayTypes: [] };
+                return [];
             }
         }
 
         const trailAttributesResponse: ValhallaTraceAttributesResponse = await response.json();
-        const surfaces = Array<string | undefined>(shapePoints.length).fill(undefined);
-        const wayTypes = Array<{ type: string, scale: number | undefined} | undefined>(shapePoints.length).fill(undefined);
+        const trailAttributes = Array<TrailAttributePoint | undefined>(shapePoints.length).fill(undefined);
 
         for (const edge of trailAttributesResponse.edges ?? []) {
             if (typeof edge.begin_shape_index !== "number" || typeof edge.end_shape_index !== "number") {
@@ -348,32 +278,38 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
             const endIndex = Math.min(shapePoints.length - 1, edge.end_shape_index);
 
             for (let i = startIndex; i <= endIndex; i++) {
+                let surface = UNKNOWN_SURFACE;
+                let type = UNKNOWN_WAY_TYPE;
+                let diffScale = UNKNOWN_WAY_SCALE;
+
                 if (edge.surface) {
-                    surfaces[i] = edge.surface;
+                    surface = edge.surface;
                 }
                 if (edge.road_class) {
-                    let scale: number | undefined = undefined;
-                    if (edge.sac_scale != undefined && typeof edge.sac_scale === "number") {
-                        scale = edge.sac_scale;
-                    }
-                    wayTypes[i] = { type: edge.road_class, scale: scale };
+                    type = edge.road_class;
+                }
+                if (edge.sac_scale && typeof edge.sac_scale === "number") {
+                    diffScale = edge.sac_scale;
                 }
                 if (edge.use && edge.use == "ferry") {
-                    wayTypes[i] = { type: edge.use, scale: undefined };
+                    type = edge.use;
+                    diffScale = UNKNOWN_WAY_SCALE;
                 }
+
+                trailAttributes[i] = { surface: surface, type: type, diffScale: diffScale };
             }
         }
 
-        return { surfaces, wayTypes };
+        return trailAttributes;
     } catch (error) {
         console.warn("Unable to fetch Valhalla route attribute data", error);
-        return { surfaces: [], wayTypes: [] };
+        return [];
     }
 }
 
-async function fetchRouteAttributesForShape(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<RouteAttributes> {
+async function fetchTrailAttributesForShape(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<(TrailAttributePoint | undefined)[]> {
     if (!shapePoints.length || !costingBody) {
-        return { surfaces: [], wayTypes: [] };
+        return [];
     }
 
     const segments = splitShapePointsByMaxLength(shapePoints, VALHALLA_MAX_PATH_LENGTH_METERS);
@@ -382,8 +318,7 @@ async function fetchRouteAttributesForShape(shapePoints: ValhallaShapePoint[], c
         return requestRouteAttributesForShapeSegment(shapePoints, costingBody);
     }
 
-    const aggregatedSurfaces = Array<string | undefined>(shapePoints.length).fill(undefined);
-    const aggregatedWayTypes = Array<{ type: string, scale: number | undefined} | undefined>(shapePoints.length).fill(undefined);
+    const aggregatedAttributes = Array<TrailAttributePoint | undefined>(shapePoints.length).fill(undefined);
 
     for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
         const { start, points } = segments[segmentIndex];
@@ -392,7 +327,7 @@ async function fetchRouteAttributesForShape(shapePoints: ValhallaShapePoint[], c
             continue;
         }
 
-        const { surfaces: segmentSurfaces, wayTypes: segmentWayTypes } = await requestRouteAttributesForShapeSegment(points, costingBody);
+        const trailAttributes = await requestRouteAttributesForShapeSegment(points, costingBody);
 
         for (let localIndex = 0; localIndex < points.length; localIndex++) {
             const globalIndex = start + localIndex;
@@ -401,44 +336,26 @@ async function fetchRouteAttributesForShape(shapePoints: ValhallaShapePoint[], c
                 break;
             }
 
-            const surface = segmentSurfaces[localIndex];
-            if (surface !== undefined) {
-                if (segmentIndex === 0 || localIndex > 0 || aggregatedSurfaces[globalIndex] === undefined) {
-                    aggregatedSurfaces[globalIndex] = surface;
-                }
-            }
-
-            const wayType = segmentWayTypes[localIndex];
-            if (wayType !== undefined) {
-                if (segmentIndex === 0 || localIndex > 0 || aggregatedWayTypes[globalIndex] === undefined) {
-                    aggregatedWayTypes[globalIndex] = wayType;
+            const attribute = trailAttributes[localIndex];
+            if (attribute !== undefined) {
+                if (segmentIndex === 0 || localIndex > 0 || aggregatedAttributes[globalIndex] === undefined) {
+                    aggregatedAttributes[globalIndex] = attribute;
                 }
             }
         }
     }
 
-    return { surfaces: aggregatedSurfaces, wayTypes: aggregatedWayTypes };
+    return aggregatedAttributes;
 }
 
-function setWaypointSurface(point: Waypoint, surface: string | undefined) {
-    const setter = (point as any).setSurface as ((surface?: string) => void) | undefined;
+function setWaypointAttribute(point: Waypoint, attributes: { surface: string, type: string, diffScale: number | undefined}) {
+    const setter = (point as any).setAttributes as ((attributes?: { surface: string, type: string, diffScale: number | undefined}) => void) | undefined;
     if (typeof setter === "function") {
-        setter.call(point, surface);
-    } else if (surface === undefined) {
-        delete (point as any).surface;
+        setter.call(point, attributes);
+    } else if (attributes === undefined) {
+        delete (point as any).attribute;
     } else {
-        point.surface = surface;
-    }
-}
-
-function setWaypointWayType(point: Waypoint, wayType: { type: string, scale: number | undefined} | undefined) {
-    const setter = (point as any).setWayType as ((wayType?: { type: string, scale: number | undefined}) => void) | undefined;
-    if (typeof setter === "function") {
-        setter.call(point, wayType);
-    } else if (wayType === undefined) {
-        delete (point as any).wayType;
-    } else {
-        (point as any).wayType = wayType;
+        point.attributes = attributes;
     }
 }
 
@@ -460,10 +377,8 @@ function extractRoutePoints(route: GPX): Array<{ point: Waypoint; lat: number; l
     return result;
 }
 
-export async function fetchRouteClassificationsForGPX(
-    route: GPX,
-    costingBody: Record<string, unknown> | undefined = undefined
-): Promise<{ surface?: TrailSurface; wayTypes?: TrailWayTypes }> {
+export async function fetchRouteClassificationsForGPX( route: GPX, costingBody: Record<string, unknown> | undefined = undefined): Promise<TrailAttributes | undefined> {
+    
     const pointEntries = extractRoutePoints(route);
 
     if (pointEntries.length < 2) {
@@ -471,64 +386,34 @@ export async function fetchRouteClassificationsForGPX(
     }    
 
     const shapePoints = pointEntries.map(({ lat, lon }) => ({ lat, lon }));
-    const { surfaces, wayTypes } = await fetchRouteAttributesForShape(shapePoints, costingBody);
+    const trailAttributes = await fetchTrailAttributesForShape(shapePoints, costingBody);
 
-    let surfaceAssigned = false;
-    let wayTypeAssigned = false;
+    let attributeAssigned = false;
 
     for (let i = 0; i < pointEntries.length; i += 1) {
         const { point } = pointEntries[i];
 
-        const surface = surfaces[i];
-        if (surface) {
-            setWaypointSurface(point, surface);
-            surfaceAssigned = true;
-        }
-
-        const wayType = wayTypes[i];
-        if (wayType) {
-            setWaypointWayType(point, wayType);
-            wayTypeAssigned = true;
+        const attributes = trailAttributes[i];
+        if (attributes) {
+            
+            setWaypointAttribute(point, { surface: attributes.surface ?? "", type: attributes.type ?? "", diffScale: attributes.diffScale ?? 0 });
+            attributeAssigned = true;
         }
     }
 
-    let surface: TrailSurface | undefined;
-    if (surfaceAssigned) {
-        surface = buildSurfaceFromRoute(route);
-        if (!surface.perPoint?.length && !surface.summary) {
-            surface = undefined;
+    let trailAttribute: TrailAttributes | undefined;
+    if (attributeAssigned) {
+        trailAttribute = buildTrailAttributesFromRoute(route);
+        if (trailAttribute.perPoint?.length && !trailAttribute.summary) {
+            trailAttribute = undefined;
         }
     }
 
-    let wayTypeData: TrailWayTypes | undefined;
-    if (wayTypeAssigned) {
-        wayTypeData = buildWayTypesFromRoute(route);
-        if (!wayTypeData.perPoint?.length && !wayTypeData.summary) {
-            wayTypeData = undefined;
-        }
-    }
-
-    return { surface, wayTypes: wayTypeData };
+    return trailAttribute;
 }
 
-export async function fetchSurfaceDataForGPX(
-    route: GPX,
-    costingBody: Record<string, unknown> | undefined = undefined
-): Promise<TrailSurface | undefined> {
-    const { surface } = await fetchRouteClassificationsForGPX(route, costingBody);
-    return surface;
-}
 
-export async function fetchWayTypeDataForGPX(
-    route: GPX,
-    costingBody: Record<string, unknown> | undefined = undefined,
-    hiking: boolean | undefined
-): Promise<TrailWayTypes | undefined> {
-    const { wayTypes } = await fetchRouteClassificationsForGPX(route, costingBody);
-    return wayTypes;
-}
-
-export async function fetchTrailAttributesDataForGPX(route: GPX, costingBody: Record<string, unknown> | undefined = undefined): Promise<{surface?: TrailSurface, wayTypes?: TrailWayTypes}> {
+export async function fetchTrailAttributesForGPX(route: GPX, costingBody: Record<string, unknown> | undefined = undefined): Promise<TrailAttributes | undefined> {
     return await fetchRouteClassificationsForGPX(route, costingBody);
 }
 
@@ -541,14 +426,13 @@ export function setRoute(newRoute: GPX, undoable: boolean = false) {
         pushToUndoStack(delta, reverseDelta)
     }
 
-    setSurface();
+    setTrailAttributes();
 }
 
 export async function calculateRouteBetween(startLat: number, startLon: number, endLat: number, endLon: number, options: RoutingOptions): Promise<{ waypoints: Waypoint[] }> {
     let shapePoints: ValhallaShapePoint[] = [];
     let duration: number = 0;
-    let surfaceTypes: (string | undefined)[] = [];
-    let wayTypes: ({ type: string, scale: number | undefined} | undefined)[] = [];
+    let attributes: (TrailAttributePoint | undefined)[] = [];
 
     if (options.autoRouting) {
         let costingBody;
@@ -583,9 +467,8 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
         const rawGeometry = routeResponse.routes?.[0]?.geometry;        
         if (typeof rawGeometry === "string") {
             shapePoints = decodePolyline(rawGeometry).map(([lon, lat]) => ({ lat, lon }));
-            const { surfaces, wayTypes: fetchedWayTypes } = await fetchRouteAttributesForShape(shapePoints, costingBody);
-            surfaceTypes = surfaces;
-            wayTypes = fetchedWayTypes;
+            const trailAttributes = await fetchTrailAttributesForShape(shapePoints, costingBody);
+            attributes = trailAttributes;
         }
 
         const osrmRoute = routeResponse.routes?.[0];
@@ -620,8 +503,7 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
         $: { lat: point.lat, lon: point.lon },
         ele: heightResponse.height?.[i],
         time: new Date(startTime + millisecondsPerPoint * i),
-        surface: surfaceTypes[i],
-        wayType: wayTypes[i]
+        attributes: attributes[i],
     }))
 
     return { waypoints };
@@ -644,7 +526,7 @@ export async function insertIntoRoute(waypoints: Waypoint[], index?: number) {
     pushToUndoStack(delta, reverseDelta)
 
     valhallaStore.route.features = valhallaStore.route.getTotals();
-    setSurface();
+    setTrailAttributes();
 }
 
 export async function editRoute(index: number, waypoints: Waypoint[]) {
@@ -663,7 +545,7 @@ export async function editRoute(index: number, waypoints: Waypoint[]) {
 
 
     valhallaStore.route.features = valhallaStore.route.getTotals();
-    setSurface();
+    setTrailAttributes();
 }
 
 export function deleteFromRoute(index: number) {
@@ -676,7 +558,7 @@ export function deleteFromRoute(index: number) {
     const reverseDelta = diff(snapshot, valhallaStore.route)
     valhallaStore.route = applyChangeset(valhallaStore.route, delta);
     pushToUndoStack(delta, reverseDelta)
-    setSurface();
+    setTrailAttributes();
 }
 
 export function reverseRoute() {
@@ -713,7 +595,7 @@ export function reverseRoute() {
         }
     });
 
-    setSurface();
+    setTrailAttributes();
 }
 
 export function resetRoute() {
@@ -731,7 +613,7 @@ export function resetRoute() {
     })
 
     valhallaStore.anchors = []
-    setSurface();    // Todo: verify if needed
+    setTrailAttributes();    // Todo: verify if needed
 }
 
 export async function recalculateHeight() {
@@ -795,7 +677,7 @@ export function undo() {
 
     valhallaStore.route = applyChangeset(valhallaStore.route, historyItem.reverseDelta);
     valhallaStore.route.features = valhallaStore.route.getTotals();
-    setSurface();
+    setTrailAttributes();
 }
 
 export function redo() {
@@ -807,5 +689,5 @@ export function redo() {
 
     valhallaStore.route = applyChangeset(valhallaStore.route, historyItem.delta);
     valhallaStore.route.features = valhallaStore.route.getTotals();
-    setSurface();
+    setTrailAttributes();
 }

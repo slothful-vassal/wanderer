@@ -8,6 +8,7 @@ import type { TrailLike } from "./trail_like";
 import type { TrailShare } from "./trail_share";
 import type { Waypoint } from "./waypoint";
 
+/*
 type TrailSurface = {
     perPoint?: TrailSurfacePoint[];
     summary?: Record<string, number>;
@@ -34,6 +35,25 @@ type TrailWayTypePoint = {
     lon?: number;
     type?: string;
     scale?: number;
+}*/
+
+type TrailAttributes = {
+    perPoint?: TrailAttributePoint[];
+    summary?: TrailAttributeSummary;
+}
+
+type TrailAttributePoint = {
+    lat?: number;
+    lon?: number;
+    surface?: string;
+    type?: string;
+    diffScale?: number;
+}
+
+type TrailAttributeSummary = {
+    surface?: Record<string, number>;
+    type?: Record<string, number>;
+    diffScale?: Record<string, number>;
 }
 
 class Trail {
@@ -54,8 +74,9 @@ class Trail {
     gpx?: string;
     created?: string;
     updated?: string;
-    surface?: TrailSurface;
-    way_type?: TrailWayTypes;
+    //surface?: TrailSurface;
+    //way_type?: TrailWayTypes;
+    attributes?: TrailAttributes;
     category?: string;
     tags: string[];
     polyline?: string;
@@ -102,8 +123,9 @@ class Trail {
             tags?: string[],
             description?: string
             created?: string,
-            surface?: TrailSurface,
-            way_type?: TrailWayTypes,
+            /*surface?: TrailSurface,
+            way_type?: TrailWayTypes,*/
+            attributes?: TrailAttributes,
         }
 
     ) {
@@ -121,8 +143,9 @@ class Trail {
         this.lon = params?.lon;
         this.thumbnail = params?.thumbnail ?? 0;
         this.photos = params?.photos ?? [];
-        this.surface = params?.surface;
-        this.way_type = params?.way_type;
+        /*this.surface = params?.surface;
+        this.way_type = params?.way_type;*/
+        this.attributes = params?.attributes;
         this.tags = []
         this.gpx = params?.gpx;
         this.like_count = 0
@@ -257,9 +280,12 @@ export type {
     TrailFilter,
     TrailFilterValues,
     TrailSearchResult,
-    TrailSurface,
+    TrailAttributes,
+    TrailAttributePoint,
+    TrailAttributeSummary,
+    /*TrailSurface,
     TrailSurfacePoint,
     TrailWayTypeSummary,
     TrailWayTypePoint,
-    TrailWayTypes,
+    TrailWayTypes,*/
 };

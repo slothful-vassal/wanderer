@@ -1,27 +1,23 @@
 import { z, ZodType } from "zod";
 import type { Trail } from "../trail";
 
-const TrailSurfaceSchema = z.object({
-    perPoint: z.array(z.object({ 
-        lat: z.number().min(-90).max(90).optional(),
-        lon: z.number().min(-180).max(180).optional(),
-        type: z.string().optional(),
-    })).optional(),
-    summary: z.record(z.number()).optional(),
-});
 
-const TrailWayTypeSummarySchema = z.object({
+
+const TrailAttributeSummarySchema = z.object({
+    surface: z.record(z.number()).optional(),
     type: z.record(z.number()).optional(),
-    scale: z.record(z.number()).optional(),
+    diffScale: z.record(z.number()).optional(),
 });
 
-const TrailWayTypesSchema = z.object({
+const TrailAttributesSchema = z.object({
     perPoint: z.array(z.object({
         lat: z.number().min(-90).max(90).optional(),
         lon: z.number().min(-180).max(180).optional(),
+        surface: z.string().optional(),
         type: z.string().optional(),
+        diffScale: z.number().optional(),
     })).optional(),
-    summary: TrailWayTypeSummarySchema.optional(),
+    summary: TrailAttributeSummarySchema.optional(),
 });
 
 const TrailCreateSchema = z.object({
@@ -45,8 +41,7 @@ const TrailCreateSchema = z.object({
     tags: z.array(z.string()).default([]),
     gpx: z.string().optional(),
     author: z.string().length(15),
-    surface: TrailSurfaceSchema.optional(),
-    way_type: TrailWayTypesSchema.optional(),
+    trailAttributes: TrailAttributesSchema.optional(),
 }) satisfies ZodType<Partial<Trail>>
 
 const TrailUpdateSchema = z.object({
@@ -70,8 +65,7 @@ const TrailUpdateSchema = z.object({
     category: z.string().optional(),
     tags: z.array(z.string()).optional(),
     gpx: z.string().optional(),
-    surface: TrailSurfaceSchema.optional(),
-    way_type: TrailWayTypesSchema.optional(),
+    trailAttributes: TrailAttributesSchema.optional(),
 }) satisfies ZodType<Partial<Trail>>
 
 const TrailRecommendSchema = z.object({

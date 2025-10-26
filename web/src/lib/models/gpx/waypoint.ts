@@ -1,4 +1,5 @@
 import Link from './link';
+import type { TrailAttributePoint } from '../trail';
 
 export default class Waypoint {
   $: {
@@ -15,8 +16,7 @@ export default class Waypoint {
   src?: string;
   sym?: string;
   type?: string;
-  surface?: string;
-  wayType?: { type: string, scale: number | undefined};
+  attributes?: TrailAttributePoint;
   sat?: string;
   hdop?: string;
   vdop?: string;
@@ -42,8 +42,7 @@ export default class Waypoint {
     src?: string,
     sym?: string,
     type?: string,
-    surface?: string,
-    wayType?: { type: string, scale: number | undefined},
+    attributes?: TrailAttributePoint;
     sat?: string,
     hdop?: string,
     vdop?: string,
@@ -68,8 +67,7 @@ export default class Waypoint {
     this.src = object.src;
     this.sym = object.sym;
     this.type = object.type;
-    this.setSurface(object.surface);
-    this.setWayType(object.wayType);
+    this.setAttributes(object.attributes);
     this.sat = object.sat;
     this.hdop = object.hdop;
     this.vdop = object.vdop;
@@ -85,18 +83,9 @@ export default class Waypoint {
     }
   }
 
-  setSurface(surface?: string) {
-    Object.defineProperty(this, "surface", {
-      value: surface,
-      writable: true,
-      configurable: true,
-      enumerable: false,
-    });
-  }
-
-  setWayType(wayType?: { type: string, scale: number | undefined}) {
-    Object.defineProperty(this, "wayType", {
-      value: wayType,
+  setAttributes(attributes?: TrailAttributePoint) {
+    Object.defineProperty(this, "attributes", {
+      value: attributes,
       writable: true,
       configurable: true,
       enumerable: false,
@@ -115,8 +104,7 @@ export default class Waypoint {
         desc: this.desc,
         time: this.time?.toISOString(),
         type: this.type,
-        surface: this.surface,
-        wayType: this.wayType,
+        attributes: this.attributes,
         sym: this.sym
       }
     };

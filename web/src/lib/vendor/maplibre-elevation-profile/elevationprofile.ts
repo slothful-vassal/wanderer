@@ -17,7 +17,7 @@ import { haversineDistance } from "$lib/models/gpx/utils";
 import type { Waypoint } from "$lib/models/waypoint";
 import { formatTimeHHMM } from "$lib/util/format_util";
 import { haversineCumulatedDistanceWgs84, smoothElevations } from "./tools";
-import type { TrailSurface } from "$lib/models/trail";
+import type { TrailAttributes } from "$lib/models/trail";
 
 const FEET_PER_METER = 3.28084;
 const MILES_PER_METER = 0.000621371;
@@ -204,14 +204,14 @@ function hasSurfaceValues(series: Array<string | undefined>): boolean {
     return series.some((value) => typeof value === "string" && value.length > 0);
 }
 
-function computeSurfaceSeriesFromTrailSurface(
+function computeSurfaceSeriesFromTrailAttributes(
     coordinates: Position[],
-    surfaceData: TrailSurface | undefined
+    attributesData: TrailAttributes | undefined
 ): Array<string | undefined> {
         
-    const breakpoints = (surfaceData?.perPoint ?? [])
-        .map((surfacePoint) => {
-            if (!surfacePoint || !surfacePoint.type || !surfacePoint.lat || !surfacePoint.lon) {
+    const breakpoints = (attributesData?.perPoint ?? [])
+        .map((attributesPoint) => {
+            if (!attributesPoint || !attributesPoint.type || !attributesPoint.lat || !attributesPoint.lon) {
                 return null;
             }
 
@@ -221,8 +221,8 @@ function computeSurfaceSeriesFromTrailSurface(
                     continue;
                 }
 
-                if (item[1] == surfacePoint.lat && item[0] == surfacePoint.lon) {
-                    return { index: i, type: surfacePoint.type };
+                if (item[1] == attributesPoint.lat && item[0] == attributesPoint.lon) {
+                    return { index: i, type: attributesPoint.surface };
                 }
             }
 
@@ -1220,10 +1220,10 @@ export class ElevationProfile {
         this.chart.update();
     }
 
-    async setData(data: GeoJsonObject, waypoints?: Waypoint[], surface?: TrailSurface | undefined) {
+    async setData(data: GeoJsonObject, waypoints?: Waypoint[], attributes?: TrailAttributes | undefined) {
         // Concatenates the positions that may come from multiple LineStrings or MultiLineString
         const { positions, times, surfaces } = geoJsonObjectToPositionsTimesAndSurfaces(data);
-        const computedSurfaces = computeSurfaceSeriesFromTrailSurface(positions, surface);
+        const computedSurfaces = computeSurfaceSeriesFromTrailAttributes(positions, attributes);
 
         this.times = times;
         this.surfaceGradient = undefined;

@@ -4,7 +4,7 @@
     import TrailDropdown from "$lib/components/trail/trail_dropdown.svelte";
     import { Comment } from "$lib/models/comment";
     import GPX from "$lib/models/gpx/gpx";
-    import type { Trail, TrailWayTypeSummary } from "$lib/models/trail";
+    import type { Trail } from "$lib/models/trail";
 
     import {
         comments,
@@ -35,7 +35,6 @@
     import Button from "../base/button.svelte";
     import Chip from "../base/chip.svelte";
     import SkeletonNotificationCard from "../base/skeleton_notification_card.svelte";
-    import Textarea from "../base/textarea.svelte";
     import CommentCard from "../comment/comment_card.svelte";
     import EmptyStateComment from "../empty_states/empty_state_comment.svelte";
     import EmptyStateDescription from "../empty_states/empty_state_description.svelte";
@@ -109,30 +108,12 @@
     let fullDescription: boolean = $state(false);
     let trailAttributesLoading = false;
 
-    function hasWayTypeSummaryData(summary: TrailWayTypeSummary | Record<string, number> | undefined): boolean {
-        if (!summary) {
+    function hasTrailAttributesData(attributes: Trail["attributes"] | undefined): boolean {
+        if (!attributes) {
             return false;
         }
-
-        if ("type" in summary || "scale" in summary) {
-            const typedSummary = summary as TrailWayTypeSummary;
-            return (
-                Object.keys(typedSummary.type ?? {}).length > 0 ||
-                Object.keys(typedSummary.scale ?? {}).length > 0
-            );
-        }
-
-        return Object.keys(summary).length > 0;
-    }
-
-    function hasTrailAttributesData(surface: Trail["surface"] | undefined, wayTypes: Trail["way_type"] | undefined): boolean {
-        if (!surface || !wayTypes) {
-            return false;
-        }
-        const hasPerPoint = (surface.perPoint?.length ?? 0) > 0 && (wayTypes.perPoint?.length ?? 0) > 0;
-        const hasSummary =
-            Object.keys(surface.summary ?? {}).length > 0 &&
-            hasWayTypeSummaryData(wayTypes.summary);
+        const hasPerPoint = (attributes.perPoint?.length ?? 0) > 0;
+        const hasSummary = Object.keys(attributes.summary ?? {}).length > 0;
 
         return hasPerPoint || hasSummary;
     }
@@ -142,7 +123,7 @@
             return;
         }
 
-        if (hasTrailAttributesData(trail.surface, trail.way_type)) {
+        if (hasTrailAttributesData(trail.attributes)) {
             return;
         }
 
@@ -165,21 +146,20 @@
                     break;
             }
             
-            const { surface, wayTypes } = await fetchRouteClassificationsForGPX(gpx, costingBody);
+            const attributes = await fetchRouteClassificationsForGPX(gpx, costingBody);
 
-            if (!surface || !wayTypes) {
+            if (!attributes) {
                 return;
             }
 
-            trail.surface = surface;
-            trail.way_type = wayTypes;
+            trail.attributes = attributes;
 
             trail.expand ??= {};
             trail.expand.gpx = gpx;
             trailStore.set(trail);
-            trails_persist_attributes
+            
             try {
-                await trails_persist_attributes(trail, surface, wayTypes);
+                await trails_persist_attributes(trail, attributes);
             } catch (persistError) {
                 console.warn("Unable to persist surface data for trail", persistError);
             }
@@ -201,14 +181,13 @@
         }
         const trailId = trail.id;
         const gpxData = trail.expand?.gpx_data;
-        const surface = trail.surface;
-        const wayTypes = trail.way_type;
+        const attributes = trail.attributes;
 
         if (!trailId || !gpxData) {
             return;
         }
 
-        if (hasTrailAttributesData(surface, wayTypes)) {
+        if (hasTrailAttributesData(attributes)) {
             return;
         }
 

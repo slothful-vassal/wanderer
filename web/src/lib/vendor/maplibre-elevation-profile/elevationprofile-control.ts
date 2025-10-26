@@ -4,7 +4,7 @@ import { ElevationProfile, type ElevationProfileOptions } from "./elevationprofi
 // @ts-ignore
 import type { GeoJsonObject, Position } from "geojson";
 import type { Waypoint } from "$lib/models/waypoint";
-import type { TrailSurface } from "$lib/models/trail";
+import type { TrailAttributes } from "$lib/models/trail";
 
 /**
  * Elevation profile control options
@@ -227,7 +227,7 @@ export class ElevationProfileControl implements IControl {
 
     getDefaultPosition?: (() => ControlPosition) | undefined;
 
-    async setData(data: GeoJsonObject, waypoints?: Waypoint[], surface?: TrailSurface | undefined) {
+    async setData(data: GeoJsonObject, waypoints?: Waypoint[], attributes?: TrailAttributes | undefined) {
         if (!this.map || !this.elevationProfileChart) {
             throw new Error(
                 "The Elevation Profile Control needs to be mounted on a map instance before setting any data."
@@ -238,6 +238,6 @@ export class ElevationProfileControl implements IControl {
 
         if (!this.data) return;
 
-        this.elevationProfileChart.setData(this.data, waypoints, surface);
+        this.elevationProfileChart.setData(this.data, waypoints, attributes);
     }
 }
