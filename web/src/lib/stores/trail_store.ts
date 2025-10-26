@@ -193,7 +193,7 @@ export async function trails_persist_attributes(trailModel: Trail, surface: Trai
         body: JSON.stringify({
             name: trailModel.name,
             surface,
-            wayTypes,
+            way_type: wayTypes,
         }),
     });
 
