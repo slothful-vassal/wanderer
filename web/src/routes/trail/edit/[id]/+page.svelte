@@ -412,7 +412,7 @@
 
         const attributeBreakpoints = (attributes.perPoint ?? [])
             .map((attributePoint) => {
-                if (!attributePoint || !attributePoint.surface || !attributePoint.type || !attributePoint.diffScale || !attributePoint.lat || !attributePoint.lon) {
+                if (!attributePoint || attributePoint.surface == undefined || attributePoint.type == undefined || attributePoint.diffScale == undefined || attributePoint.lat == undefined || attributePoint.lon == undefined) {
                     return null;
                 }
 
