@@ -19,6 +19,9 @@ import { formatTimeHHMM } from "$lib/util/format_util";
 import { haversineCumulatedDistanceWgs84, smoothElevations } from "./tools";
 import type { TrailAttributes } from "$lib/models/trail";
 
+import { _ } from "svelte-i18n";
+import { get } from 'svelte/store'
+
 const FEET_PER_METER = 3.28084;
 const MILES_PER_METER = 0.000621371;
 const KILOMETERS_HOUR_PER_METER_SECOND = 3.6
@@ -27,6 +30,7 @@ const MILES_HOUR_PER_METER_SECOND = 2.23694
 const DEFAULT_SURFACE_COLOR = "rgba(107, 114, 128, 0.3)";
 
 enum SurfaceGroup {
+    "asphalt",
     "pavement",
     "cobblestone",
     "gravel",
@@ -34,23 +38,9 @@ enum SurfaceGroup {
     "unknown",
 }
 
-const SURFACE_COLOR_CACHE = new Map<string, string>();
-
-function hashToHue(value: string): number {
-    let hash = 0;
-    for (let i = 0; i < value.length; i++) {
-        hash = (hash << 5) - hash + value.charCodeAt(i);
-        hash |= 0;
-    }
-    return Math.abs(hash) % 360;
-}
-
-function colorFromHue(hue: number): string {
-    return `hsla(${hue}, 60%, 55%, 0.35)`;
-}
 
 const SURFACE_GROUP_MAP: Record<string, SurfaceGroup> = {
-    "asphalt": SurfaceGroup.pavement,
+    "asphalt": SurfaceGroup.asphalt,
     "concrete": SurfaceGroup.pavement,
     "paved": SurfaceGroup.pavement,
     "paved_smooth": SurfaceGroup.pavement,
@@ -80,6 +70,7 @@ const SURFACE_GROUP_MAP: Record<string, SurfaceGroup> = {
 }
 
 const SURFACE_COLOR_MAP: Record<SurfaceGroup, string> = {
+    [SurfaceGroup.asphalt]: "rgba(2, 137, 209, 0.55)",
     [SurfaceGroup.pavement]: "rgba(2, 136, 209, 0.35)",
     [SurfaceGroup.cobblestone]: "rgba(57, 73, 171, 0.35)",
     [SurfaceGroup.gravel]: "rgba(174, 213, 129, 0.35)",
@@ -97,21 +88,15 @@ function getSurfaceColor(surface?: string, fallbackColor?: string): string {
         return fallbackColor;
     }
 
-    const normalized = normalizeSurfaceName(surface);
-    const surfaceGroup = SURFACE_GROUP_MAP[normalized];
+    const surfaceGroup = SURFACE_GROUP_MAP[normalizeSurfaceName(surface)];
     if (surfaceGroup !== undefined) {
         const surfaceColor = SURFACE_COLOR_MAP[surfaceGroup];
         if (surfaceColor) {
             return surfaceColor;
         }
     }
-
-    let cached = SURFACE_COLOR_CACHE.get(normalized);
-    if (!cached) {
-        cached = colorFromHue(hashToHue(normalized));
-        SURFACE_COLOR_CACHE.set(normalized, cached);
-    }
-    return cached;
+    
+    return DEFAULT_SURFACE_COLOR;
 }
 
 type CoordinateSeries = Array<string | null | undefined>;
@@ -120,7 +105,6 @@ type CoordinateSeriesCollection = CoordinateSeries | CoordinateSeries[] | undefi
 type ExtractedSegment = {
     geometry: LineString | MultiLineString;
     times?: CoordinateSeriesCollection;
-    surfaces?: CoordinateSeriesCollection;
 };
 
 function extractLineStrings(geoJson: GeoJsonObject): ExtractedSegment[] {
@@ -134,7 +118,6 @@ function extractLineStrings(geoJson: GeoJsonObject): ExtractedSegment[] {
             segments.push({
                 geometry: geometry as LineString | MultiLineString,
                 times: metadata?.times,
-                surfaces: metadata?.surfaces,
             });
         }
     }
@@ -145,7 +128,6 @@ function extractLineStrings(geoJson: GeoJsonObject): ExtractedSegment[] {
             coordinateProperties && typeof coordinateProperties === "object"
                 ? {
                     times: coordinateProperties.times as CoordinateSeriesCollection,
-                    surfaces: coordinateProperties.surfaces as CoordinateSeriesCollection,
                 }
                 : undefined;
 
@@ -200,14 +182,18 @@ function extractSeriesForIndex(
     return collection as CoordinateSeries;
 }
 
-function hasSurfaceValues(series: Array<string | undefined>): boolean {
-    return series.some((value) => typeof value === "string" && value.length > 0);
+function hasAttributeValues(series: Array<{ surface: string, type: string, diffScale: number } | undefined>): boolean {
+    return series.some((value) => 
+        (typeof value?.surface === "string" && value.surface.length > 0) ||
+        (typeof value?.type === "string" && value.type.length > 0) ||
+        (typeof value?.diffScale === "number" && value.diffScale != undefined)
+    );
 }
 
-function computeSurfaceSeriesFromTrailAttributes(
+function resolveAttributeDetailSeriesFromTrailAttributes(
     coordinates: Position[],
     attributesData: TrailAttributes | undefined
-): Array<string | undefined> {
+): Array<{ surface: string, type: string, diffScale: number } | undefined> {
         
     const breakpoints = (attributesData?.perPoint ?? [])
         .map((attributesPoint) => {
@@ -222,21 +208,21 @@ function computeSurfaceSeriesFromTrailAttributes(
                 }
 
                 if (item[1] == attributesPoint.lat && item[0] == attributesPoint.lon) {
-                    return { index: i, type: attributesPoint.surface };
+                    return { index: i, type: { surface: attributesPoint.surface, type: attributesPoint.type, diffScale: attributesPoint.diffScale } };
                 }
             }
 
             return null;
         })
-        .filter((item): item is { index: number; type: string } => item !== null)
+        .filter((item): item is { index: number; type: { surface: string, type: string, diffScale: number } } => item !== null)
         .sort((a, b) => a.index - b.index);
 
     if (!breakpoints.length) {
         return [];
     }
 
-    const series = Array<string | undefined>(coordinates.length).fill(undefined);
-    let currentType: string | undefined;
+    const series = Array<{ surface: string, type: string, diffScale: number } | undefined>(coordinates.length).fill(undefined);
+    let currentType: { surface: string, type: string, diffScale: number } | undefined;
     let cursor = 0;
 
     for (let i = 0; i < series.length; i += 1) {
@@ -258,51 +244,44 @@ function getValueAt(series: CoordinateSeries | undefined, index: number) {
     return series[index];
 }
 
-function geoJsonObjectToPositionsTimesAndSurfaces(
+function geoJsonObjectToPositions(
     geoJson: GeoJsonObject
-): { positions: Position[]; times: Array<Date | undefined>; surfaces: Array<string | undefined> } {
+): { positions: Position[]; times: Array<Date | undefined> } {
     const segments = extractLineStrings(geoJson);
     const positions: Position[] = [];
     const times: Array<Date | undefined> = [];
-    const surfaces: Array<string | undefined> = [];
 
     const appendSeries = (
         coordinates: Position[],
-        timesSeries?: CoordinateSeries,
-        surfacesSeries?: CoordinateSeries
+        timesSeries?: CoordinateSeries
     ) => {
         for (let i = 0; i < coordinates.length; i += 1) {
             positions.push(coordinates[i]);
 
             const timeValue = getValueAt(timesSeries, i);
             times.push(typeof timeValue === "string" ? new Date(timeValue) : undefined);
-
-            const surfaceValue = getValueAt(surfacesSeries, i);
-            surfaces.push(typeof surfaceValue === "string" ? surfaceValue : undefined);
         }
     };
 
     for (const segment of segments) {
-        const { geometry, times: timesCollection, surfaces: surfacesCollection } = segment;
+        const { geometry, times: timesCollection } = segment;
 
         if (geometry.type === "LineString") {
             appendSeries(
                 geometry.coordinates,
-                extractSeriesForIndex(timesCollection, 0),
-                extractSeriesForIndex(surfacesCollection, 0)
+                extractSeriesForIndex(timesCollection, 0)
             );
         } else if (geometry.type === "MultiLineString") {
             geometry.coordinates.forEach((coords, index) => {
                 appendSeries(
                     coords,
-                    extractSeriesForIndex(timesCollection, index),
-                    extractSeriesForIndex(surfacesCollection, index)
+                    extractSeriesForIndex(timesCollection, index)
                 );
             });
         }
     }
 
-    return { positions, times, surfaces };
+    return { positions, times };
 }
 
 /**
@@ -452,6 +431,24 @@ export type ElevationProfileOptions = {
     */
     tooltipDisplaySpeed?: boolean;
     /**
+    * Display the surface inside the tooltip if `true`.
+    *
+    * Default: `true`
+    */
+    tooltipDisplaySurface?: boolean;
+    /**
+    * Display the way type inside the tooltip if `true`.
+    *
+    * Default: `true`
+    */
+    tooltipDisplayType?: boolean;
+    /**
+    * Display the difficulty scale inside the tooltip if `true`.
+    *
+    * Default: `true`
+    */
+    tooltipDisplayDiffScale?: boolean;
+    /**
      * Display the distance grid lines (vertical lines matching the distance labels) if `true`.
      *
      * Default: `false`
@@ -559,6 +556,9 @@ const elevationProfileDefaultOptions: ElevationProfileOptions = {
     tooltipDisplayDPlus: true,
     tooltipDisplayGrade: true,
     tooltipDisplaySpeed: true,
+    tooltipDisplaySurface: true,
+    tooltipDisplayType: true,
+    tooltipDisplayDiffScale: true,
     displayDistanceGrid: false,
     displayElevationGrid: true,
     distanceGridColor: "#0001",
@@ -593,7 +593,7 @@ export class ElevationProfile {
     private times: Array<Date | undefined> = [];
     private cumulatedTime: number[] = []
     private speed: number[] = [];
-    private surfaces: (string | undefined)[] = [];
+    private attributes: ({ surface: string, type: string, diffScale: number } | undefined)[] = [];
 
     private gradeColor = [
         "#0d0887", // 0% and less
@@ -679,7 +679,7 @@ export class ElevationProfile {
                             : 0,
                     },*/
                     {
-                        label: "Elevation",
+                        label: get(_)("elevation"),
                         yAxisID: "y",
                         data: [],
                         pointRadius: 0,
@@ -865,7 +865,7 @@ export class ElevationProfile {
                                 const tooltipInfo = [];
                                 if (this.settings.tooltipDisplayDistance) {
                                     tooltipInfo.push(
-                                        `After: ${this.cumulatedDistanceAdjustedUnit[
+                                        get(_)("after") + `: ${this.cumulatedDistanceAdjustedUnit[
                                             tooltipItem.dataIndex
                                         ].toFixed(2)} ${distanceUnit} ${this.cumulatedTime.length ? '(' + formatTimeHHMM(this.cumulatedTime[tooltipItem.dataIndex]) + ')' : ''}`
                                     );
@@ -873,7 +873,7 @@ export class ElevationProfile {
 
                                 if (this.settings.tooltipDisplayElevation) {
                                     tooltipInfo.push(
-                                        `Elevation: ${this.elevatedPositionsAdjustedUnit[
+                                        get(_)("elevation") + `: ${this.elevatedPositionsAdjustedUnit[
                                             tooltipItem.dataIndex
                                         ][2].toFixed(2)} ${elevationUnit}`
                                     );
@@ -889,16 +889,34 @@ export class ElevationProfile {
 
                                 if (this.settings.tooltipDisplayGrade) {
                                     tooltipInfo.push(
-                                        `Grade: ${this.grade[tooltipItem.dataIndex].toFixed(1)}%`
+                                        get(_)("grade") + `: ${this.grade[tooltipItem.dataIndex].toFixed(1)}%`
                                     );
                                 }
 
                                 if (this.settings.tooltipDisplaySpeed && this.speed.length) {
-                                    tooltipInfo.push(`Speed: ${this.speed[
+                                    tooltipInfo.push(get(_)("speed") + `: ${this.speed[
                                         tooltipItem.dataIndex
                                     ]?.toFixed(2)} ${distanceUnit}/h`
                                     );
                                 }
+
+                                if (this.settings.tooltipDisplaySurface && this.attributes.length) {
+                                    tooltipInfo.push(get(_)("surface") + `: ${this.getSurfaceName(this.attributes[tooltipItem.dataIndex]?.surface)}`
+                                    );
+                                }
+
+                                if (this.settings.tooltipDisplayType && this.attributes.length) {
+                                    tooltipInfo.push(get(_)("waytype") + `: ${get(_)("waytype:" + this.attributes[
+                                        tooltipItem.dataIndex
+                                    ]?.type?.toString())}`
+                                    );
+                                }
+
+                                if (this.settings.tooltipDisplayDiffScale && this.attributes.length && (this.attributes[tooltipItem.dataIndex]?.diffScale ?? 0) > 0) {
+                                    tooltipInfo.push(get(_)("sac-scale") + `: ${get(_)("sac-scale:" + this.attributes[tooltipItem.dataIndex]!.diffScale.toFixed(0))}`
+                                    );
+                                }
+                                
 
                                 return tooltipInfo;
                             },
@@ -1000,6 +1018,19 @@ export class ElevationProfile {
         }
     }
 
+    getSurfaceName(surface: string | undefined) {
+        if (!surface) {
+            return get(_)("surface:" + SurfaceGroup[SurfaceGroup.unknown]);
+        }
+
+        const surfaceGroup = SURFACE_GROUP_MAP[normalizeSurfaceName(surface)];
+        if (!surfaceGroup) {
+            return get(_)("surface:" + SurfaceGroup[SurfaceGroup.unknown]);
+        }
+
+        return get(_)("surface:" + SurfaceGroup[surfaceGroup]);
+    }
+
     getChartCoordinatesFromPosition(lat: number, lon: number) {
 
         let minDistance = Infinity
@@ -1034,11 +1065,11 @@ export class ElevationProfile {
             return fallbackColor;
         }
 
-        if (!hasSurfaceValues(this.surfaces)) {
+        if (!hasAttributeValues(this.attributes)) {
             return fallbackColor;
         }
 
-        const sampleCount = Math.min(this.surfaces.length, this.cumulatedDistance.length);
+        const sampleCount = Math.min(this.attributes.length, this.cumulatedDistance.length);
 
         const chartArea = context.chart.chartArea;
         if (!chartArea || sampleCount === 0) {
@@ -1054,10 +1085,10 @@ export class ElevationProfile {
 
         const segments: Array<{ index: number; surface: string | undefined }> = [];
         if (sampleCount > 0) {
-            let previousSurface = this.surfaces[0];
+            let previousSurface = this.attributes[0]?.surface;
             segments.push({ index: 0, surface: previousSurface });
             for (let i = 1; i < sampleCount; i++) {
-                const surface = this.surfaces[i] ?? previousSurface;
+                const surface = this.attributes[i]?.surface ?? previousSurface;
                 if (surface !== previousSurface) {
                     segments.push({ index: i, surface });
                     previousSurface = surface;
@@ -1208,7 +1239,7 @@ export class ElevationProfile {
         this.surfaceGradientHeight = undefined;
         this.chart.data.datasets[0].backgroundColor = (context) => this.colorFromSurfaceType(context);
         this.chart.data.datasets[0].fill =
-            hasSurfaceValues(this.surfaces) || !!this.settings.profileBackgroundColor;
+            hasAttributeValues(this.attributes) || !!this.settings.profileBackgroundColor;
         this.chart.options.scales!.x!.ticks!.color = this.settings.labelColor;
 
         this.chart.options.scales!.y!.grid!.color = this.settings.elevationGridColor;
@@ -1222,8 +1253,8 @@ export class ElevationProfile {
 
     async setData(data: GeoJsonObject, waypoints?: Waypoint[], attributes?: TrailAttributes | undefined) {
         // Concatenates the positions that may come from multiple LineStrings or MultiLineString
-        const { positions, times, surfaces } = geoJsonObjectToPositionsTimesAndSurfaces(data);
-        const computedSurfaces = computeSurfaceSeriesFromTrailAttributes(positions, attributes);
+        const { positions, times } = geoJsonObjectToPositions(data);
+        const resolvedAttributes = resolveAttributeDetailSeriesFromTrailAttributes(positions, attributes);
 
         this.times = times;
         this.surfaceGradient = undefined;
@@ -1260,15 +1291,9 @@ export class ElevationProfile {
         this.grade = [];
         this.waypoints = waypoints ?? [];
         this.waypointPositions = [];
-        const selectedSurfaces = hasSurfaceValues(surfaces)
-            ? surfaces
-            : hasSurfaceValues(computedSurfaces)
-                ? computedSurfaces
-                : [];
-        this.surfaces = selectedSurfaces;
+        this.attributes = hasAttributeValues(resolvedAttributes) ? resolvedAttributes : [];
         this.chart.data.datasets[0].backgroundColor = (context) => this.colorFromSurfaceType(context);
-        const hasSurfaceData = hasSurfaceValues(this.surfaces);
-        this.chart.data.datasets[0].fill = hasSurfaceData || !!this.settings.profileBackgroundColor;
+        this.chart.data.datasets[0].fill = this.attributes.length > 0 || !!this.settings.profileBackgroundColor;
 
         let cumulatedDPlus = 0;
         let cumulatedTime = 0;
