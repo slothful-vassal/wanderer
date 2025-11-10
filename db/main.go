@@ -814,6 +814,7 @@ func censorIntegrationSecrets(r *core.Record) error {
 	secrets := map[string][]string{
 		"strava": {"clientSecret", "refreshToken", "accessToken", "expiresAt"},
 		"komoot": {"password"},
+		"immich": {"apiKey"},
 	}
 	for key, secretKeys := range secrets {
 		if integrationString := r.GetString(key); integrationString != "" {
@@ -847,6 +848,7 @@ func encryptIntegrationSecrets(app core.App, r *core.Record) error {
 	secrets := map[string][]string{
 		"strava": {"clientSecret", "refreshToken", "accessToken", "expiresAt"},
 		"komoot": {"password"},
+		"immich": {"apiKey"},
 	}
 
 	original, _ := app.FindRecordById("integrations", r.Id)
