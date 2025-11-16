@@ -34,7 +34,7 @@ export async function waypoints_create(waypoint: Waypoint, f: (url: RequestInfo 
             formData.append("photos", photo)
         }
 
-        r = await fetch(`/api/v1/waypoint/${model.id!}/file`, {
+        r = await f(`/api/v1/waypoint/${model.id!}/file`, {
             method: 'POST',
             body: formData,
         })
@@ -49,14 +49,14 @@ export async function waypoints_create(waypoint: Waypoint, f: (url: RequestInfo 
 
 }
 
-export async function waypoints_update(oldWaypoint: Waypoint, newWaypoint: Waypoint) {
+export async function waypoints_update(oldWaypoint: Waypoint, newWaypoint: Waypoint, f: (url: RequestInfo | URL, config?: RequestInit) => Promise<Response> = fetch) {
     const user = get(currentUser)
     if (!user) {
         throw Error("Unauthenticated")
     }
     newWaypoint.author = user.id
 
-    let r = await fetch('/api/v1/waypoint/' + newWaypoint.id, {
+    let r = await f('/api/v1/waypoint/' + newWaypoint.id, {
         method: 'POST',
         body: JSON.stringify(newWaypoint),
     })
@@ -78,7 +78,7 @@ export async function waypoints_update(oldWaypoint: Waypoint, newWaypoint: Waypo
         formData.append("photos-", deletedPhoto.replace(/^.*[\\/]/, ''));
     }
 
-    r = await fetch(`/api/v1/waypoint/${newWaypoint.id!}/file`, {
+    r = await f(`/api/v1/waypoint/${newWaypoint.id!}/file`, {
         method: 'POST',
         body: formData,
     })
@@ -91,8 +91,8 @@ export async function waypoints_update(oldWaypoint: Waypoint, newWaypoint: Waypo
 
 }
 
-export async function waypoints_delete(waypoint: Waypoint) {
-    const r = await fetch('/api/v1/waypoint/' + waypoint.id, {
+export async function waypoints_delete(waypoint: Waypoint, f: (url: RequestInfo | URL, config?: RequestInit) => Promise<Response> = fetch) {
+    const r = await f('/api/v1/waypoint/' + waypoint.id, {
         method: 'DELETE',
     })
     if (!r.ok) {

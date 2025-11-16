@@ -1,4 +1,4 @@
-{
+﻿{
   "Biking": "Fietsen",
   "Canoeing": "Kanoën",
   "Climbing": "Klimmen",
@@ -425,5 +425,15 @@
   "welcome_to": "Welkom bij",
   "width": "Breedte",
   "wrong-username-or-password": "Onjuiste gebruikersnaam of wachtwoord",
-  "you-can": "Jij kunt"
+  "you-can": "Jij kunt",
+  "error-updating-immich-integration": "Error updating Immich integration",
+  "integration-description-immich": "Automatically attach geo-tagged Immich photos as waypoints whenever you upload a trail.",
+  "immich-url-label": "Immich server URL",
+  "immich-api-key-label": "Immich API key",
+  "immich-time-window-minutes": "Time window (minutes)",
+  "immich-distance-threshold-meters": "Max distance (m)",
+  "immich-max-waypoints": "Max waypoints",
+  "immich-settings-hint": "wanderer will look for Immich photos within the given time window and distance. Matching photos will be downloaded and attached as waypoints automatically."
 }
+
+

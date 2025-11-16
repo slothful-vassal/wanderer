@@ -21,16 +21,26 @@ export interface KomootIntegration extends BaseIntegration {
     planned: boolean
 }
 
+export interface ImmichIntegration extends BaseIntegration {
+    url: string;
+    apiKey: string;
+    timeWindowMinutes: number;
+    maxDistanceMeters: number;
+    maxWaypoints: number;
+}
+
 
 export class Integration {
     id?: string;
     user: string;
     strava?: StravaIntegration | null;
     komoot?: KomootIntegration | null
+    immich?: ImmichIntegration | null
 
-    constructor(user: string, strava?: StravaIntegration, komoot?: KomootIntegration) {
+    constructor(user: string, strava?: StravaIntegration, komoot?: KomootIntegration, immich?: ImmichIntegration) {
         this.user = user;
         this.strava = strava;
         this.komoot = komoot;
+        this.immich = immich;
     }
 }

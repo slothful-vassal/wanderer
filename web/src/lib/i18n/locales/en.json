@@ -1,4 +1,4 @@
-{
+﻿{
   "Biking": "Biking",
   "Canoeing": "Canoeing",
   "Climbing": "Climbing",
@@ -147,6 +147,7 @@
   "error-setting-up-integration": "Error setting up {provider} integration",
   "error-updating-password": "Error updating password",
   "error-updating-strava-integration": "Error updating komoot integration",
+  "error-updating-immich-integration": "Error updating Immich integration",
   "est-duration": "Est. duration",
   "everyone-with-the-link": "Everyone with the link",
   "explore": "Explore",
@@ -204,9 +205,16 @@
   "include-waypoints": "Include waypoints",
   "integration-description-komoot": "Syncs your komoot tours with wanderer in regular intervals.",
   "integration-description-strava": "Syncs your strava routes & activities with wanderer in regular intervals.",
+  "integration-description-immich": "Automatically attach geo-tagged Immich photos as waypoints whenever you upload a trail.",
   "integration-disabled": "integration disabled",
   "integration-enabled": "integration enabled",
   "integrations": "Integrations",
+  "immich-url-label": "Immich server URL",
+  "immich-api-key-label": "Immich API key",
+  "immich-time-window-minutes": "Time window (minutes)",
+  "immich-distance-threshold-meters": "Max distance (m)",
+  "immich-max-waypoints": "Max waypoints",
+  "immich-settings-hint": "wanderer will look for Immich photos within the given time window and distance. Matching photos will be downloaded and attached as waypoints automatically.",
   "invalid-date": "Invalid Date",
   "invalid-username": "Invalid username",
   "italian": "Italian",
@@ -427,3 +435,4 @@
   "wrong-username-or-password": "Wrong username or password",
   "you-can": "You can"
 }
+

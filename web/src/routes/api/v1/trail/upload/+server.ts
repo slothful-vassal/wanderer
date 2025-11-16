@@ -9,6 +9,7 @@ import { json, type RequestEvent } from "@sveltejs/kit";
 import type MeiliSearch from "meilisearch";
 import type { Hits } from "meilisearch";
 import { ClientResponseError } from "pocketbase";
+import { fetchImmichWaypoints } from "$lib/server/integrations/immich";
 
 export async function PUT(event: RequestEvent) {
     try {
@@ -44,6 +45,21 @@ export async function PUT(event: RequestEvent) {
         if (trail.lat && trail.lon) {
             const location = await searchLocationReverse(trail.lat, trail.lon)
             trail.location ??= location;
+        }
+
+        try {
+            const immichWaypoints = await fetchImmichWaypoints(
+                event.locals.pb,
+                event.locals.user,
+                parseResult.gpx,
+            );
+            if (immichWaypoints.length) {
+                trail.expand ??= { waypoints_via_trail: [] } as Trail["expand"];
+                trail.expand!.waypoints_via_trail ??= [];
+                trail.expand!.waypoints_via_trail.push(...immichWaypoints);
+            }
+        } catch (immichError) {
+            console.warn("Immich integration failed", immichError);
         }
 
         // const log = new SummitLog(trail.date as string, {

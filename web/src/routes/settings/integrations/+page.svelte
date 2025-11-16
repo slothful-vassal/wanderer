@@ -1,10 +1,12 @@
 <script lang="ts">
     import { page } from "$app/state";
     import IntegrationCard from "$lib/components/settings/integrations/integration_card.svelte";
+    import ImmichSettingsModal from "$lib/components/settings/integrations/immich_settings_modal.svelte";
     import KomootSettingsModal from "$lib/components/settings/integrations/komoot_settings_modal.svelte";
     import StravaSettingsModal from "$lib/components/settings/integrations/strava_settings_modal.svelte";
     import {
         Integration,
+        type ImmichIntegration,
         type KomootIntegration,
         type StravaIntegration
     } from "$lib/models/integration.js";
@@ -32,9 +34,14 @@
         data.integration?.komoot?.active ?? false,
     );
 
+    let immichSettingsModal: ImmichSettingsModal;
+    let immichToggleValue: boolean = $state(
+        data.integration?.immich?.active ?? false,
+    );
+
     async function onSettingsSave(
-        form: StravaIntegration | KomootIntegration,
-        key: "strava" | "komoot",
+        form: StravaIntegration | KomootIntegration | ImmichIntegration,
+        key: "strava" | "komoot" | "immich",
     ) {
         try {
             if (integration) {
@@ -153,6 +160,31 @@
             type: "success",
         });
     }
+
+    async function onImmichToggle(value: boolean) {
+        if (!integration?.immich) {
+            return;
+        }
+        integration.immich.active = value;
+        try {
+            integration = await integrations_update(integration);
+        } catch (e) {
+            immichToggleValue = !value;
+            show_toast({
+                text: $_("error-updating-immich-integration"),
+                icon: "close",
+                type: "error",
+            });
+            return;
+        }
+
+        show_toast({
+            text:
+                "Immich " + $_(`integration-${value ? "enabled" : "disabled"}`),
+            icon: "check",
+            type: "success",
+        });
+    }
 </script>
 
 <svelte:head>
@@ -181,6 +213,15 @@
         onclick={() => komootSettingsModal.openModal()}
         ontoggle={onKomootToggle}
     ></IntegrationCard>
+    <IntegrationCard
+        img="/immich.svg"
+        title="Immich"
+        description={$_("integration-description-immich")}
+        disabled={!integration?.immich}
+        bind:active={immichToggleValue}
+        onclick={() => immichSettingsModal.openModal()}
+        ontoggle={onImmichToggle}
+    ></IntegrationCard>
 </div>
 
 <StravaSettingsModal
@@ -194,3 +235,9 @@
     {integration}
     onsave={(form) => onSettingsSave(form, "komoot")}
 ></KomootSettingsModal>
+
+<ImmichSettingsModal
+    bind:this={immichSettingsModal}
+    {integration}
+    onsave={(form) => onSettingsSave(form, "immich")}
+></ImmichSettingsModal>
