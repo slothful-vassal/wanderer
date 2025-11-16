@@ -27,7 +27,7 @@
     import { theme } from "$lib/stores/theme_store";
     import { trail as trailStore, trails_update } from "$lib/stores/trail_store";
     import { show_toast } from "$lib/stores/toast_store.svelte";
-    import { fetchRouteClassificationsForGPX } from "$lib/stores/valhalla_store.svelte";
+    import { fetchRouteClassificationsForGPX, getDiffScaleTypeForCategory } from "$lib/stores/valhalla_store.svelte";
     import * as M from "maplibre-gl";
     import "photoswipe/style.css";
     import { onMount } from "svelte";
@@ -135,7 +135,8 @@
         trailAttributesLoading = true;
         try {
             const gpx = trail.expand?.gpx ? trail.expand.gpx : GPX.parse(gpxData);
-
+            const diffScaleType = getDiffScaleTypeForCategory(trail.category);
+            
             let costingBody;
             switch (trail.category) {
                 case "7u4d6b446po42f0": // biking
@@ -146,7 +147,7 @@
                     break;
             }
             
-            const attributes = await fetchRouteClassificationsForGPX(gpx, costingBody);
+            const attributes = await fetchRouteClassificationsForGPX(gpx, costingBody, diffScaleType);
 
             if (!attributes) {
                 return;

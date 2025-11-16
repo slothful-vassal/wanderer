@@ -4,15 +4,14 @@
  * License: MIT
  */
 
+import { fetchOverpassData } from "$lib/stores/overpass_store";
 import { createOverpassPopup } from "$lib/util/maplibre_util";
 import * as M from "maplibre-gl";
 import { type LngLatBounds, type MapMouseEvent, type StyleSpecification } from "maplibre-gl";
 import { pois, type BaseLayer, type MapState } from "./layers";
 import type { OverpassResponse } from "./types";
-import { env } from '$env/dynamic/public'
 
 export class OverpassLayer implements BaseLayer {
-    private overpassApiURL: string = (env.PUBLIC_OVERPASS_API_URL && env.PUBLIC_OVERPASS_API_URL.length > 0 ? env.PUBLIC_OVERPASS_API_URL : "https://overpass-api.de") + "/api/interpreter";
 
     data: GeoJSON.FeatureCollection = ({ type: 'FeatureCollection', features: [] });
 
@@ -145,11 +144,10 @@ export class OverpassLayer implements BaseLayer {
 
     private async fetchTile(x: number, y: number, activeQueries: string[], bounds: LngLatBounds) {
         const q = this.getOverpassQuery(activeQueries, bounds)
-        if (!q.length) {
+        const response = await fetchOverpassData(q);
+        if (!response) {
             return;
         }
-        const r = await fetch(`${this.overpassApiURL}?data=${q}`)
-        const response: OverpassResponse = await r.json();
 
         this.cacheData(x, y, response, activeQueries)
         this.loadIcons(activeQueries)

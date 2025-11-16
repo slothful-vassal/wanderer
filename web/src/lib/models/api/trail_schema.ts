@@ -3,6 +3,8 @@ import type { Trail } from "../trail";
 
 
 
+const DiffScaleTypeSchema = z.enum(["mtb-scale", "sac-scale", "none", "unknown"]);
+
 const TrailAttributeSummarySchema = z.object({
     surface: z.record(z.number()).optional(),
     type: z.record(z.number()).optional(),
@@ -18,6 +20,7 @@ const TrailAttributesSchema = z.object({
         diffScale: z.number().optional(),
     })).optional(),
     summary: TrailAttributeSummarySchema.optional(),
+    diffScaleType: DiffScaleTypeSchema.optional(),
 });
 
 const TrailCreateSchema = z.object({

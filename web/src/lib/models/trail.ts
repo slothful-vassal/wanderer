@@ -9,9 +9,12 @@ import type { TrailShare } from "./trail_share";
 import type { Waypoint } from "./waypoint";
 
 
+type DiffScaleType = "mtb-scale" | "sac-scale" | "none" | "unknown";
+
 type TrailAttributes = {
     perPoint?: TrailAttributePoint[];
     summary?: TrailAttributeSummary;
+    diffScaleType?: DiffScaleType;
 }
 
 type TrailAttributePoint = {
@@ -242,6 +245,7 @@ export const defaultTrailSearchAttributes = [
 export { Trail };
 
 export type {
+    DiffScaleType,
     TrailBoundingBox,
     TrailFilter,
     TrailFilterValues,

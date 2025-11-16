@@ -17,7 +17,7 @@ import { haversineDistance } from "$lib/models/gpx/utils";
 import type { Waypoint } from "$lib/models/waypoint";
 import { formatTimeHHMM } from "$lib/util/format_util";
 import { haversineCumulatedDistanceWgs84, smoothElevations } from "./tools";
-import type { TrailAttributes } from "$lib/models/trail";
+import type { TrailAttributes, DiffScaleType } from "$lib/models/trail";
 
 import { _ } from "svelte-i18n";
 import { get } from 'svelte/store'
@@ -594,6 +594,7 @@ export class ElevationProfile {
     private cumulatedTime: number[] = []
     private speed: number[] = [];
     private attributes: ({ surface: string, type: string, diffScale: number } | undefined)[] = [];
+    private diffScaleType: DiffScaleType = "unknown";
 
     private gradeColor = [
         "#0d0887", // 0% and less
@@ -912,9 +913,13 @@ export class ElevationProfile {
                                     );
                                 }
 
-                                if (this.settings.tooltipDisplayDiffScale && this.attributes.length && (this.attributes[tooltipItem.dataIndex]?.diffScale ?? 0) > 0) {
-                                    tooltipInfo.push(get(_)("sac-scale") + `: ${get(_)("sac-scale:" + this.attributes[tooltipItem.dataIndex]!.diffScale.toFixed(0))}`
+                                if (this.settings.tooltipDisplayDiffScale && this.attributes.length) {
+                                    const diffScaleText = this.getDiffScaleTooltipLabel(
+                                        this.attributes[tooltipItem.dataIndex]?.diffScale
                                     );
+                                    if (diffScaleText) {
+                                        tooltipInfo.push(diffScaleText);
+                                    }
                                 }
                                 
 
@@ -1029,6 +1034,31 @@ export class ElevationProfile {
         }
 
         return get(_)("surface:" + SurfaceGroup[surfaceGroup]);
+    }
+
+    private getDiffScaleTooltipLabel(value: number | undefined): string | undefined {
+        if (value === undefined || Number.isNaN(value)) {
+            return undefined;
+        }
+
+        let effectiveScaleType: DiffScaleType = this.diffScaleType === "mtb-scale" || this.diffScaleType === "sac-scale" ? this.diffScaleType : "sac-scale";
+
+        if (effectiveScaleType === "sac-scale" && value <= 0) {
+            return undefined;
+        }
+
+        const roundedValue = Math.round(value);
+        let translationValue = roundedValue;
+        if (effectiveScaleType === "mtb-scale") {
+            translationValue = Math.min(5, Math.max(0, roundedValue));
+        } else {
+            translationValue = Math.min(6, Math.max(1, roundedValue));
+        }
+
+        const label = get(_)(effectiveScaleType);
+        const valueLabel = get(_)(`${effectiveScaleType}:${translationValue}`);
+
+        return `${label}: ${valueLabel}`;
     }
 
     getChartCoordinatesFromPosition(lat: number, lon: number) {
@@ -1255,6 +1285,7 @@ export class ElevationProfile {
         // Concatenates the positions that may come from multiple LineStrings or MultiLineString
         const { positions, times } = geoJsonObjectToPositions(data);
         const resolvedAttributes = resolveAttributeDetailSeriesFromTrailAttributes(positions, attributes);
+        this.diffScaleType = attributes?.diffScaleType ?? "unknown";
 
         this.times = times;
         this.surfaceGradient = undefined;

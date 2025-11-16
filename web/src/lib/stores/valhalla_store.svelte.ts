@@ -3,7 +3,7 @@ import Track from "$lib/models/gpx/track";
 import TrackSegment from "$lib/models/gpx/track-segment";
 import { haversineDistance } from "$lib/models/gpx/utils";
 import Waypoint from "$lib/models/gpx/waypoint";
-import type { TrailAttributes, TrailAttributePoint, TrailAttributeSummary } from "$lib/models/trail";
+import type { TrailAttributes, TrailAttributePoint, TrailAttributeSummary, DiffScaleType } from "$lib/models/trail";
 import { type RoutingOptions, type ValhallaAnchor, type ValhallaHeightResponse, type ValhallaRouteResponse, type ValhallaTraceAttributesResponse } from "$lib/models/valhalla";
 import { APIError } from "$lib/util/api_util";
 import { decodePolyline } from "$lib/util/polyline_util";
@@ -11,6 +11,7 @@ import { applyChangeset, diff, type Changeset } from 'json-diff-ts';
 import type { LngLat } from "maplibre-gl";
 import { _ } from "svelte-i18n";
 import { get } from "svelte/store";
+import { fetchMtbScaleAssignmentsForShape } from "$lib/stores/overpass_store";
 
 const emtpyTrack = new Track({ trkseg: [] })
 
@@ -31,7 +32,7 @@ type TrailAttributeSummaryAccumulator = {
 };
 
 
-function buildTrailAttributesFromRoute(route: GPX): TrailAttributes {
+function buildTrailAttributesFromRoute(route: GPX, diffScaleType: DiffScaleType = DIFF_SCALE_TYPE_UNKNOWN): TrailAttributes {
     const summaryAccumulator = { surface: {}, type: {}, diffScale: {} };
     const perPoint: TrailAttributePoint[] = [];
 
@@ -48,9 +49,10 @@ function buildTrailAttributesFromRoute(route: GPX): TrailAttributes {
             for (const point of points) {
                 if (
                     !point.attributes ||
-                    (point.attributes.type === currentAttributes?.type &&
-                        point.attributes.diffScale === currentAttributes?.diffScale &&
-                        point.attributes.surface === currentAttributes?.surface)
+                    (currentAttributes &&
+                        point.attributes.type === currentAttributes.type &&
+                        point.attributes.diffScale === currentAttributes.diffScale &&
+                        point.attributes.surface === currentAttributes.surface)
                 ) {
                     continue;
                 }
@@ -62,12 +64,19 @@ function buildTrailAttributesFromRoute(route: GPX): TrailAttributes {
                     continue;
                 }
 
-                perPoint.push({ lat, lon, surface: point.attributes.surface, type: point.attributes.type, diffScale: point.attributes.diffScale });
+                perPoint.push({
+                    lat,
+                    lon,
+                    surface: point.attributes.surface,
+                    type: point.attributes.type,
+                    diffScale: point.attributes.diffScale,
+                });
                 currentAttributes = point.attributes;
             }
         }
     }
 
+    const normalizedDiffScaleType = normalizeDiffScaleType(diffScaleType);
     const result: TrailAttributes = {};
     if (perPoint.length) {
         result.perPoint = perPoint;
@@ -76,6 +85,10 @@ function buildTrailAttributesFromRoute(route: GPX): TrailAttributes {
     const summary = finalizeTrailAttributeSummary(summaryAccumulator);
     if (summary) {
         result.summary = summary;
+    }
+
+    if (result.perPoint || result.summary || normalizedDiffScaleType !== DIFF_SCALE_TYPE_UNKNOWN) {
+        result.diffScaleType = normalizedDiffScaleType;
     }
 
     return Object.keys(result).length ? result : {};
@@ -141,7 +154,10 @@ function mergeClassificationSummaries(target: Record<string, number>, addition: 
 }
 
 function setTrailAttributes() {
-    valhallaStore.attributes = buildTrailAttributesFromRoute(valhallaStore.route);
+    valhallaStore.attributes = buildTrailAttributesFromRoute(
+        valhallaStore.route,
+        normalizeDiffScaleType(valhallaStore.attributes.diffScaleType)
+    );
 }
 
 export function clearRoute() {
@@ -173,6 +189,31 @@ const UNKNOWN_SURFACE = "unknown";
 const UNKNOWN_WAY_TYPE = "unknown";
 const UNKNOWN_WAY_SCALE = 0;
 const VALHALLA_MAX_PATH_LENGTH_METERS = 150_000;    // 200_000 specified, but ensure rounding differences
+const BICYCLING_CATEGORY_IDS = new Set(["7u4d6b446po42f0"]);
+
+const DIFF_SCALE_TYPE_MTB: DiffScaleType = "mtb-scale";
+const DIFF_SCALE_TYPE_SAC: DiffScaleType = "sac-scale";
+const DIFF_SCALE_TYPE_NONE: DiffScaleType = "none";
+const DIFF_SCALE_TYPE_UNKNOWN: DiffScaleType = "unknown";
+
+function normalizeDiffScaleType(value: DiffScaleType | undefined): DiffScaleType {
+    switch (value) {
+        case DIFF_SCALE_TYPE_MTB:
+        case DIFF_SCALE_TYPE_SAC:
+        case DIFF_SCALE_TYPE_NONE:
+        case DIFF_SCALE_TYPE_UNKNOWN:
+            return value;
+        default:
+            return DIFF_SCALE_TYPE_UNKNOWN;
+    }
+}
+
+export function getDiffScaleTypeForCategory(categoryId: string | undefined): DiffScaleType {
+    if (categoryId && BICYCLING_CATEGORY_IDS.has(categoryId)) {
+        return DIFF_SCALE_TYPE_MTB;
+    }
+    return DIFF_SCALE_TYPE_SAC;
+}
 
 
 function accumulateTrailAttributesLength(
@@ -225,7 +266,30 @@ function splitShapePointsByMaxLength(shapePoints: ValhallaShapePoint[], maxLengt
     return segments;
 }
 
-async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<(TrailAttributePoint | undefined)[]> {
+function shouldUseMtbScale(costingBody: Record<string, unknown> | undefined, diffScaleTypeHint?: DiffScaleType): boolean {
+    if (diffScaleTypeHint === DIFF_SCALE_TYPE_MTB) {
+        return true;
+    }
+    if (diffScaleTypeHint === DIFF_SCALE_TYPE_SAC) {
+        return false;
+    }
+    if (diffScaleTypeHint === DIFF_SCALE_TYPE_NONE) {
+        return false;
+    }
+
+    if (!costingBody) {
+        return false;
+    }
+
+    const costingValue = (costingBody as { costing?: unknown }).costing;
+    if (typeof costingValue !== "string") {
+        return false;
+    }
+
+    return costingValue.toLowerCase() === "bicycle";
+}
+
+async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined, diffScaleType: DiffScaleType): Promise<(TrailAttributePoint | undefined)[]> {
     if (!shapePoints.length || !costingBody) {
         return [];
     }
@@ -233,6 +297,9 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
     if (shapePoints.length < 2) {
         return Array<TrailAttributePoint | undefined>(shapePoints.length).fill(undefined);
     }
+
+    const useMtbScale = shouldUseMtbScale(costingBody, diffScaleType);
+    const mtbScaleAssignments = useMtbScale ? await fetchMtbScaleAssignmentsForShape(shapePoints) : undefined;
 
     const body = {
         shape: shapePoints,
@@ -288,7 +355,12 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
                 if (edge.road_class) {
                     type = edge.road_class;
                 }
-                if (edge.sac_scale && typeof edge.sac_scale === "number") {
+                if (useMtbScale && mtbScaleAssignments) {
+                    const mtbScaleValue = mtbScaleAssignments[i];
+                    if (typeof mtbScaleValue === "number") {
+                        diffScale = mtbScaleValue;
+                    }
+                } else if (edge.sac_scale !== undefined && edge.sac_scale !== null && typeof edge.sac_scale === "number") {
                     diffScale = edge.sac_scale;
                 }
                 if (edge.use && edge.use == "ferry") {
@@ -307,7 +379,7 @@ async function requestRouteAttributesForShapeSegment(shapePoints: ValhallaShapeP
     }
 }
 
-async function fetchTrailAttributesForShape(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined): Promise<(TrailAttributePoint | undefined)[]> {
+async function fetchTrailAttributesForShape(shapePoints: ValhallaShapePoint[], costingBody: Record<string, unknown> | undefined, diffScaleType: DiffScaleType): Promise<(TrailAttributePoint | undefined)[]> {
     if (!shapePoints.length || !costingBody) {
         return [];
     }
@@ -323,7 +395,7 @@ async function fetchTrailAttributesForShape(shapePoints: ValhallaShapePoint[], c
             continue;
         }
 
-        const trailAttributes = await requestRouteAttributesForShapeSegment(points, costingBody);
+        const trailAttributes = await requestRouteAttributesForShapeSegment(points, costingBody, diffScaleType);
 
         for (let localIndex = 0; localIndex < points.length; localIndex++) {
             const globalIndex = start + localIndex;
@@ -344,8 +416,8 @@ async function fetchTrailAttributesForShape(shapePoints: ValhallaShapePoint[], c
     return aggregatedAttributes;
 }
 
-function setWaypointAttribute(point: Waypoint, attributes: { surface: string, type: string, diffScale: number | undefined}) {
-    const setter = (point as any).setAttributes as ((attributes?: { surface: string, type: string, diffScale: number | undefined}) => void) | undefined;
+function setWaypointAttribute(point: Waypoint, attributes: TrailAttributePoint | undefined) {
+    const setter = (point as any).setAttributes as ((attributes?: TrailAttributePoint) => void) | undefined;
     if (typeof setter === "function") {
         setter.call(point, attributes);
     } else if (attributes === undefined) {
@@ -373,7 +445,7 @@ function extractRoutePoints(route: GPX): Array<{ point: Waypoint; lat: number; l
     return result;
 }
 
-export async function fetchRouteClassificationsForGPX( route: GPX, costingBody: Record<string, unknown> | undefined = undefined): Promise<TrailAttributes | undefined> {
+export async function fetchRouteClassificationsForGPX( route: GPX, costingBody: Record<string, unknown> | undefined = undefined, diffScaleType: DiffScaleType = DIFF_SCALE_TYPE_UNKNOWN): Promise<TrailAttributes | undefined> {
     
     const pointEntries = extractRoutePoints(route);
 
@@ -382,7 +454,8 @@ export async function fetchRouteClassificationsForGPX( route: GPX, costingBody: 
     }    
 
     const shapePoints = pointEntries.map(({ lat, lon }) => ({ lat, lon }));
-    const trailAttributes = await fetchTrailAttributesForShape(shapePoints, costingBody);
+    const normalizedDiffScaleType = normalizeDiffScaleType(diffScaleType);
+    const trailAttributes = await fetchTrailAttributesForShape(shapePoints, costingBody, normalizedDiffScaleType);
 
     let attributeAssigned = false;
 
@@ -392,25 +465,32 @@ export async function fetchRouteClassificationsForGPX( route: GPX, costingBody: 
         const attributes = trailAttributes[i];
         if (attributes) {
             
-            setWaypointAttribute(point, { surface: attributes.surface ?? "", type: attributes.type ?? "", diffScale: attributes.diffScale ?? 0 });
+            const normalizedAttribute: TrailAttributePoint = {
+                surface: attributes.surface ?? "",
+                type: attributes.type ?? "",
+                diffScale: attributes.diffScale ?? 0,
+            };
+            setWaypointAttribute(point, normalizedAttribute);
             attributeAssigned = true;
         }
     }
 
     let trailAttribute: TrailAttributes | undefined;
     if (attributeAssigned) {
-        trailAttribute = buildTrailAttributesFromRoute(route);
+        trailAttribute = buildTrailAttributesFromRoute(route, normalizedDiffScaleType);
         if (trailAttribute.perPoint?.length && !trailAttribute.summary) {
             trailAttribute = undefined;
         }
+    } else if (normalizedDiffScaleType !== DIFF_SCALE_TYPE_UNKNOWN) {
+        trailAttribute = { diffScaleType: normalizedDiffScaleType };
     }
 
     return trailAttribute;
 }
 
 
-export async function fetchTrailAttributesForGPX(route: GPX, costingBody: Record<string, unknown> | undefined = undefined): Promise<TrailAttributes | undefined> {
-    return await fetchRouteClassificationsForGPX(route, costingBody);
+export async function fetchTrailAttributesForGPX(route: GPX, costingBody: Record<string, unknown> | undefined = undefined, diffScaleType: DiffScaleType = DIFF_SCALE_TYPE_UNKNOWN): Promise<TrailAttributes | undefined> {
+    return await fetchRouteClassificationsForGPX(route, costingBody, diffScaleType);
 }
 
 
@@ -425,10 +505,17 @@ export function setRoute(newRoute: GPX, undoable: boolean = false) {
     setTrailAttributes();
 }
 
-export async function calculateRouteBetween(startLat: number, startLon: number, endLat: number, endLon: number, options: RoutingOptions): Promise<{ waypoints: Waypoint[] }> {
+export async function calculateRouteBetween(startLat: number, startLon: number, endLat: number, endLon: number, options: RoutingOptions, diffScaleType: DiffScaleType = DIFF_SCALE_TYPE_UNKNOWN): Promise<{ waypoints: Waypoint[] }> {
     let shapePoints: ValhallaShapePoint[] = [];
     let duration: number = 0;
     let attributes: (TrailAttributePoint | undefined)[] = [];
+
+    if (diffScaleType !== DIFF_SCALE_TYPE_UNKNOWN) {
+        valhallaStore.attributes = {
+            ...valhallaStore.attributes,
+            diffScaleType: diffScaleType,
+        };
+    }
 
     if (options.autoRouting) {
         let costingBody;
@@ -463,8 +550,14 @@ export async function calculateRouteBetween(startLat: number, startLon: number, 
         const rawGeometry = routeResponse.routes?.[0]?.geometry;        
         if (typeof rawGeometry === "string") {
             shapePoints = decodePolyline(rawGeometry).map(([lon, lat]) => ({ lat, lon }));
-            const trailAttributes = await fetchTrailAttributesForShape(shapePoints, costingBody);
-            attributes = trailAttributes;
+            const trailAttributesResult = await fetchTrailAttributesForShape(shapePoints, costingBody, diffScaleType);
+            attributes = trailAttributesResult;
+            if (diffScaleType !== DIFF_SCALE_TYPE_UNKNOWN) {
+                valhallaStore.attributes = {
+                    ...valhallaStore.attributes,
+                    diffScaleType: diffScaleType,
+                };
+            }
         }
 
         const osrmRoute = routeResponse.routes?.[0];

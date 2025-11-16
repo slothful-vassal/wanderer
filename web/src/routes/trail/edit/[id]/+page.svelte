@@ -19,7 +19,13 @@
     import GPXWaypoint from "$lib/models/gpx/waypoint";
     import type { List } from "$lib/models/list";
     import { SummitLog } from "$lib/models/summit_log";
-    import { Trail, type TrailAttributes, type TrailAttributePoint, type TrailAttributeSummary } from "$lib/models/trail";
+    import {
+        Trail,
+        type TrailAttributes,
+        type TrailAttributePoint,
+        type TrailAttributeSummary,
+        type DiffScaleType,
+    } from "$lib/models/trail";
     import type { RoutingOptions, ValhallaAnchor } from "$lib/models/valhalla";
     import { Waypoint } from "$lib/models/waypoint";
     import { categories } from "$lib/stores/category_store";
@@ -36,6 +42,7 @@
     } from "$lib/stores/trail_store.js";
     import {
         valhallaStore,
+        getDiffScaleTypeForCategory,
         calculateRouteBetween,
         clearAnchors,
         clearRoute,
@@ -370,7 +377,8 @@
         trailAttributeDataLoading = true;
         try {
             const costingBody = resolveCostingBody();
-            const attributes = await fetchTrailAttributesForGPX(valhallaStore.route,costingBody);
+            const diffScaleType = getDiffScaleTypeForCategory($formData.category);
+            const attributes = await fetchTrailAttributesForGPX(valhallaStore.route, costingBody, diffScaleType);
 
             if (!attributes) {
                 return;
@@ -469,6 +477,49 @@
         }
     }
 
+    async function refreshDiffScaleAttributesForCategory(diffScaleType: DiffScaleType) {
+        valhallaStore.attributes = { diffScaleType };
+
+        const flattenedRoute = flattenRoutePoints(valhallaStore.route);
+        if (!flattenedRoute.length) {
+            return;
+        }
+
+        applyTrailAttributesToGPXInstance(valhallaStore.route, undefined);
+        const clearedAttributes = updateTrailAttributesFieldsFromRoute();
+        updateTrailOnMap(clearedAttributes);
+
+        if (flattenedRoute.length < 2) {
+            return;
+        }
+
+        try {
+            const costingBody = resolveCostingBody();
+            const attributes = await fetchTrailAttributesForGPX(
+                valhallaStore.route,
+                costingBody,
+                diffScaleType,
+            );
+
+            if (diffScaleType !== getDiffScaleTypeForCategory($formData.category)) {
+                return;
+            }
+
+            if (!attributes) {
+                return;
+            }
+
+            valhallaStore.attributes = attributes;
+            const attributeData = updateTrailAttributesFieldsFromRoute() ?? attributes;
+            updateTrailOnMap(attributeData);
+        } catch (error) {
+            console.warn(
+                "Unable to refresh trail attribute data when the diff scale type changed",
+                error,
+            );
+        }
+    }
+
     function createTrailAttributesDataFromRoute(route: GPX): TrailAttributes {
         const flattened = flattenRoutePoints(route);
         if (!flattened.length) {
@@ -484,7 +535,11 @@
             }
 
             if (point.attributes) {
-                if (point.attributes.surface !== currentAttribute?.surface || point.attributes.type !== currentAttribute?.type || point.attributes.diffScale !== currentAttribute?.diffScale) {
+                if (
+                    point.attributes.surface !== currentAttribute?.surface ||
+                    point.attributes.type !== currentAttribute?.type ||
+                    point.attributes.diffScale !== currentAttribute?.diffScale
+                ) {
                     perAttributePoint.push({
                         lat,
                         lon,
@@ -511,6 +566,7 @@
         return {
             perPoint: perAttributePoint.length ? perAttributePoint : undefined,
             summary: hasAttributesSummary ? valhallaStore.attributes.summary : undefined,
+            diffScaleType: valhallaStore.attributes.diffScaleType,
         };
     }
 
@@ -544,7 +600,16 @@
                     gpx.rte = undefined;
                 }
 
-                applyTrailAttributesToGPXInstance(gpx, $formData.attributes as TrailAttributes | undefined);
+                const initialAttributes = $formData.attributes as TrailAttributes | undefined;
+                valhallaStore.attributes = initialAttributes
+                    ? {
+                          ...initialAttributes,
+                          diffScaleType:
+                              initialAttributes.diffScaleType ??
+                              getDiffScaleTypeForCategory($formData.category),
+                      }
+                    : { diffScaleType: getDiffScaleTypeForCategory($formData.category) };
+                applyTrailAttributesToGPXInstance(gpx, initialAttributes);
                 setRoute(gpx);
                 initRouteAnchors(gpx);
                 const attributes = updateTrailAttributesFieldsFromRoute();
@@ -554,6 +619,23 @@
                 await ensureTrailAttributesDataForRoute(category == "28u13dp5p7ry2n7");
             }
         }
+    });
+
+    onMount(() => {
+        let previousDiffScaleType = getDiffScaleTypeForCategory($formData.category);
+        const unsubscribe = formData.subscribe((currentFormData) => {
+            const targetDiffScaleType = getDiffScaleTypeForCategory(currentFormData.category);
+            if (targetDiffScaleType === previousDiffScaleType) {
+                return;
+            }
+
+            previousDiffScaleType = targetDiffScaleType;
+            void refreshDiffScaleAttributesForCategory(targetDiffScaleType);
+        });
+
+        return () => {
+            unsubscribe();
+        };
     });
 
     function openFileBrowser() {
@@ -628,6 +710,10 @@
                 ];
                 parseResult.gpx.rte = undefined;
             }
+            valhallaStore.attributes = {
+                ...valhallaStore.attributes,
+                diffScaleType: getDiffScaleTypeForCategory($formData.category),
+            };
             setRoute(parseResult.gpx);
             initRouteAnchors(parseResult.gpx);
 
@@ -904,6 +990,7 @@
                 lat,
                 lon,
                 routingOptions,
+                getDiffScaleTypeForCategory($formData.category),
             );
             insertIntoRoute(routeWaypoints);
             updateTrailWithRouteData();
@@ -1059,6 +1146,7 @@
                     nextAnchor.lat,
                     nextAnchor.lon,
                     routingOptions,
+                    getDiffScaleTypeForCategory($formData.category),
                 );
                 nextRouteSegment = nextResult.waypoints;
             }
@@ -1070,6 +1158,7 @@
                     anchor.lat,
                     anchor.lon,
                     routingOptions,
+                    getDiffScaleTypeForCategory($formData.category),
                 );
                 previousRouteSegment = previousResult.waypoints;
             }
@@ -1113,12 +1202,14 @@
         const nextAnchor = valhallaStore.anchors[data.segment + 2];
 
         try {
+            const diffScaleType = getDiffScaleTypeForCategory($formData.category);
             const { waypoints: previousRouteSegment } = await calculateRouteBetween(
                 previousAnchor.lat,
                 previousAnchor.lon,
                 anchor.lat,
                 anchor.lon,
                 routingOptions,
+                diffScaleType,
             );
             const { waypoints: nextRouteSegment } = await calculateRouteBetween(
                 anchor.lat,
@@ -1126,6 +1217,7 @@
                 nextAnchor.lat,
                 nextAnchor.lon,
                 routingOptions,
+                diffScaleType,
             );
 
             editRoute(data.segment, previousRouteSegment);
