@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"pocketbase/integrations/immich"
+
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
@@ -68,6 +70,11 @@ func SyncKomoot(app core.App) error {
 			app.Logger().Warn(warning)
 			continue
 		}
+		immichIntegration, err := immich.ParseIntegration(i.GetString("immich"), encryptionKey)
+		if err != nil {
+			app.Logger().Warn(fmt.Sprintf("unable to parse Immich integration for user '%s': %v", userId, err))
+		}
+
 		hasNewTours := true
 		page := 0
 		for hasNewTours {
@@ -79,7 +86,7 @@ func SyncKomoot(app core.App) error {
 				continue
 			}
 
-			hasNewTours, err = syncTrailWithTours(app, k, komootIntegration, userId, actorId, tours)
+			hasNewTours, err = syncTrailWithTours(app, k, komootIntegration, userId, actorId, tours, immichIntegration)
 			if err != nil {
 				warning := fmt.Sprintf("error syncing komoot tours with trails: %v\n", err)
 				fmt.Print(warning)
@@ -184,7 +191,7 @@ func (k *KomootApi) fetchDetailedTour(tour KomootTour) (*DetailedKomootTour, err
 	return data, nil
 }
 
-func syncTrailWithTours(app core.App, k *KomootApi, i KomootIntegration, user string, actor string, tours []KomootTour) (bool, error) {
+func syncTrailWithTours(app core.App, k *KomootApi, i KomootIntegration, user string, actor string, tours []KomootTour, immichCfg *immich.Integration) (bool, error) {
 	hasNewTours := false
 	for _, tour := range tours {
 		trails, err := app.FindRecordsByFilter("trails", "external_id = {:id}", "", 1, 0, dbx.Params{"id": strconv.Itoa(int(tour.ID))})
@@ -214,6 +221,11 @@ func syncTrailWithTours(app core.App, k *KomootApi, i KomootIntegration, user st
 		if err != nil {
 			app.Logger().Warn(fmt.Sprintf("Unable to create waypoints for tour '%s': %v", tour.Name, err))
 			continue
+		}
+		if immichCfg != nil && immichCfg.ShouldUseFor("komoot") && gpx != nil {
+			if err := immich.AttachWaypointsFromGPX(app, immichCfg, user, trailid, gpx); err != nil {
+				app.Logger().Warn(fmt.Sprintf("Unable to import Immich waypoints for tour '%s': %v", tour.Name, err))
+			}
 		}
 
 	}

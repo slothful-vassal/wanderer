@@ -17,6 +17,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/security"
 	"github.com/tkrajina/gpxgo/gpx"
 	"github.com/twpayne/go-polyline"
+	"pocketbase/integrations/immich"
 )
 
 type StravaApi struct {
@@ -89,6 +90,11 @@ func SyncStrava(app core.App) error {
 			stravaIntegration.ExpiresAt = r.ExpiresAt
 		}
 
+		immichIntegration, err := immich.ParseIntegration(i.GetString("immich"), encryptionKey)
+		if err != nil {
+			app.Logger().Warn(fmt.Sprintf("unable to parse Immich integration for user '%s': %v", userId, err))
+		}
+
 		if stravaIntegration.Routes {
 			page := 1
 			hasMore := true
@@ -102,7 +108,7 @@ func SyncStrava(app core.App) error {
 					app.Logger().Warn(warning)
 					break
 				}
-				err = syncTrailsWithRoutes(app, r.AccessToken, userId, actorId, routes)
+				err = syncTrailsWithRoutes(app, r.AccessToken, userId, actorId, routes, immichIntegration)
 				if err != nil {
 					warning := fmt.Sprintf("error syncing strava routes with trails: %v\n", err)
 					fmt.Print(warning)
@@ -134,7 +140,7 @@ func SyncStrava(app core.App) error {
 					app.Logger().Warn(warning)
 					break
 				}
-				err = syncTrailsWithActivities(app, r.AccessToken, actorId, activities)
+				err = syncTrailsWithActivities(app, r.AccessToken, userId, actorId, activities, immichIntegration)
 
 				if err != nil {
 					warning := fmt.Sprintf("error syncing strava activities with trails: %v", err)
@@ -248,7 +254,7 @@ func fetchStravaActivities(accessToken string, page int, after int64) ([]StravaA
 	return activities, nil
 }
 
-func syncTrailsWithRoutes(app core.App, accessToken string, user string, actor string, routes []StravaRoute) error {
+func syncTrailsWithRoutes(app core.App, accessToken string, user string, actor string, routes []StravaRoute, immichCfg *immich.Integration) error {
 	for _, route := range routes {
 		trails, err := app.FindRecordsByFilter("trails", "external_id = {:id}", "", 1, 0, dbx.Params{"id": route.IDStr})
 		if err != nil {
@@ -271,6 +277,11 @@ func syncTrailsWithRoutes(app core.App, accessToken string, user string, actor s
 		if err != nil {
 			app.Logger().Warn(fmt.Sprintf("Unable to create waypoints for route '%s': %v", route.Name, err))
 			continue
+		}
+		if immichCfg != nil && immichCfg.ShouldUseFor("strava") && gpx != nil {
+			if err := immich.AttachWaypointsFromGPX(app, immichCfg, user, trailid, gpx); err != nil {
+				app.Logger().Warn(fmt.Sprintf("Unable to import Immich waypoints for route '%s': %v", route.Name, err))
+			}
 		}
 	}
 
@@ -404,7 +415,7 @@ func createWaypointsFromRoute(app core.App, route StravaRoute, user string, trai
 	return nil
 }
 
-func syncTrailsWithActivities(app core.App, accessToken string, actor string, activities []StravaActivity) error {
+func syncTrailsWithActivities(app core.App, accessToken string, user string, actor string, activities []StravaActivity, immichCfg *immich.Integration) error {
 	for _, activity := range activities {
 		trails, err := app.FindRecordsByFilter("trails", "external_id = {:id}", "", 1, 0, dbx.Params{"id": strconv.Itoa(int(activity.ID))})
 		if err != nil {
@@ -423,10 +434,15 @@ func syncTrailsWithActivities(app core.App, accessToken string, actor string, ac
 			app.Logger().Warn(fmt.Sprintf("Unable to fetch GPX for activity '%s': %v", activity.Name, err))
 			continue
 		}
-		err = createTrailFromActivity(app, detailedActivity, gpx, actor)
+		trailID, err := createTrailFromActivity(app, detailedActivity, gpx, actor)
 		if err != nil {
 			app.Logger().Warn(fmt.Sprintf("Unable to create trail from activity '%s': %v", activity.Name, err))
 			continue
+		}
+		if immichCfg != nil && immichCfg.ShouldUseFor("strava") && gpx != nil && trailID != "" {
+			if err := immich.AttachWaypointsFromGPX(app, immichCfg, user, trailID, gpx); err != nil {
+				app.Logger().Warn(fmt.Sprintf("Unable to import Immich waypoints for activity '%s': %v", activity.Name, err))
+			}
 		}
 	}
 
@@ -460,21 +476,21 @@ func fetchDetailedActivity(activity StravaActivity, accessToken string) (*Detail
 	return &detailedActivity, nil
 }
 
-func createTrailFromActivity(app core.App, activity *DetailedStravaActivity, gpx *filesystem.File, user string) error {
+func createTrailFromActivity(app core.App, activity *DetailedStravaActivity, gpx *filesystem.File, user string) (string, error) {
 	if len(activity.StartLatlng) < 2 {
-		return nil
+		return "", nil
 	}
 
 	collection, err := app.FindCollectionByNameOrId("trails")
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	var photo *filesystem.File
 	if len(activity.Photos.Primary.Urls.Num600) > 0 {
 		photo, err = fetchActivityPhoto(activity)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 
@@ -552,10 +568,10 @@ func createTrailFromActivity(app core.App, activity *DetailedStravaActivity, gpx
 	}
 
 	if err := app.Save(record); err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return record.Id, nil
 }
 
 func fetchActivityPhoto(activity *DetailedStravaActivity) (*filesystem.File, error) {

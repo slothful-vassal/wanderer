@@ -27,6 +27,8 @@ export interface ImmichIntegration extends BaseIntegration {
     timeWindowMinutes: number;
     maxDistanceMeters: number;
     maxWaypoints: number;
+    useForStrava: boolean;
+    useForKomoot: boolean;
 }
 
 

@@ -1,4 +1,4 @@
-﻿{
+{
   "Biking": "Fietsen",
   "Canoeing": "Kanoën",
   "Climbing": "Klimmen",
@@ -433,7 +433,7 @@
   "immich-time-window-minutes": "Time window (minutes)",
   "immich-distance-threshold-meters": "Max distance (m)",
   "immich-max-waypoints": "Max waypoints",
-  "immich-settings-hint": "wanderer will look for Immich photos within the given time window and distance. Matching photos will be downloaded and attached as waypoints automatically."
+  "immich-settings-hint": "wanderer will look for Immich photos within the given time window and distance. Matching photos will be downloaded and attached as waypoints automatically.",
+  "immich-use-for-strava-label": "Attach Immich photos to Strava imports",
+  "immich-use-for-komoot-label": "Attach Immich photos to Komoot imports"
 }
-
-

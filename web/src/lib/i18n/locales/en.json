@@ -1,4 +1,4 @@
-﻿{
+{
   "Biking": "Biking",
   "Canoeing": "Canoeing",
   "Climbing": "Climbing",
@@ -433,6 +433,7 @@
   "welcome_to": "Welcome to",
   "width": "Width",
   "wrong-username-or-password": "Wrong username or password",
-  "you-can": "You can"
+  "you-can": "You can",
+  "immich-use-for-strava-label": "Attach Immich photos to Strava imports",
+  "immich-use-for-komoot-label": "Attach Immich photos to Komoot imports"
 }
-

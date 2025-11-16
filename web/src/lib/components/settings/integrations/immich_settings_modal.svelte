@@ -1,6 +1,7 @@
 <script lang="ts">
     import Modal from "$lib/components/base/modal.svelte";
     import TextField from "$lib/components/base/text_field.svelte";
+    import Toggle from "$lib/components/base/toggle.svelte";
     import { ImmichSchema } from "$lib/models/api/integration_schema";
     import type {
         ImmichIntegration,
@@ -34,6 +35,8 @@
             timeWindowMinutes: integration?.immich?.timeWindowMinutes ?? 120,
             maxDistanceMeters: integration?.immich?.maxDistanceMeters ?? 150,
             maxWaypoints: integration?.immich?.maxWaypoints ?? 25,
+            useForStrava: integration?.immich?.useForStrava ?? false,
+            useForKomoot: integration?.immich?.useForKomoot ?? false,
             active: integration?.immich?.active ?? false,
         },
         extend: validator({
@@ -89,6 +92,16 @@
                     type="number"
                     error={$errors.maxWaypoints}
                 ></TextField>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Toggle
+                    name="useForStrava"
+                    label={$_("immich-use-for-strava-label")}
+                ></Toggle>
+                <Toggle
+                    name="useForKomoot"
+                    label={$_("immich-use-for-komoot-label")}
+                ></Toggle>
             </div>
             <p class="text-xs text-gray-500">
                 {$_("immich-settings-hint")}

@@ -24,6 +24,8 @@ const ImmichSchema = z.object({
     timeWindowMinutes: z.number({ coerce: true }).int().min(0).max(1440),
     maxDistanceMeters: z.number({ coerce: true }).int().min(10).max(5000),
     maxWaypoints: z.number({ coerce: true }).int().min(1).max(200),
+    useForStrava: z.boolean(),
+    useForKomoot: z.boolean(),
     active: z.boolean(),
 })
 
