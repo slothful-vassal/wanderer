@@ -52,6 +52,7 @@ export async function PUT(event: RequestEvent) {
                 event.locals.pb,
                 event.locals.user,
                 parseResult.gpx,
+                trail.expand?.waypoints_via_trail ?? [],
             );
             if (immichWaypoints.length) {
                 trail.expand ??= { waypoints_via_trail: [] } as Trail["expand"];

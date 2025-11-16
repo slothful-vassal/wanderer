@@ -28,6 +28,7 @@ export async function fetchImmichWaypoints(
     pb: PocketBase,
     user: AuthRecord | null,
     gpx: GPX,
+    existingWaypoints: Waypoint[] = [],
 ): Promise<Waypoint[]> {
     if (!user) {
         return [];
@@ -69,6 +70,13 @@ export async function fetchImmichWaypoints(
     }
 
     const matches: ImmichAssetMatch[] = [];
+    const existingCoordinates = existingWaypoints
+        .filter(
+            (waypoint) =>
+                typeof waypoint.lat === "number" &&
+                typeof waypoint.lon === "number",
+        )
+        .map((waypoint) => ({ lat: waypoint.lat, lon: waypoint.lon }));
 
     for (const asset of assets) {
         const lat = asset.exifInfo?.latitude;
@@ -103,6 +111,15 @@ export async function fetchImmichWaypoints(
 
     const waypoints: Waypoint[] = [];
     for (const match of limitedMatches) {
+        if (
+            isDuplicateCoordinate(
+                match.point.lat,
+                match.point.lon,
+                existingCoordinates,
+            )
+        ) {
+            continue;
+        }
         const photo = await downloadImmichAsset(
             apiBaseUrl,
             integration.apiKey,
@@ -124,9 +141,27 @@ export async function fetchImmichWaypoints(
         waypoint._photos = [photo];
 
         waypoints.push(waypoint);
+        existingCoordinates.push({
+            lat: match.point.lat,
+            lon: match.point.lon,
+        });
     }
 
     return waypoints;
+}
+
+const DUPLICATE_COORDINATE_DISTANCE_METERS = 5;
+
+function isDuplicateCoordinate(
+    lat: number,
+    lon: number,
+    existing: { lat: number; lon: number }[],
+): boolean {
+    return existing.some(
+        (coord) =>
+            haversineDistance(lat, lon, coord.lat, coord.lon) <=
+            DUPLICATE_COORDINATE_DISTANCE_METERS,
+    );
 }
 
 async function loadIntegration(

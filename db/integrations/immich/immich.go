@@ -14,6 +14,7 @@ import (
 
 	"pocketbase/util"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/pocketbase/pocketbase/tools/security"
@@ -61,6 +62,7 @@ type trackPoint struct {
 }
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
+const duplicateCoordinateDistanceMeters = 5.0
 
 func ParseIntegration(raw string, encryptionKey string) (*Integration, error) {
 	raw = strings.TrimSpace(raw)
@@ -168,7 +170,15 @@ func AttachWaypointsFromGPX(app core.App, cfg *Integration, userID, trailID stri
 		return err
 	}
 
+	existingCoords, err := loadExistingWaypointCoords(app, trailID)
+	if err != nil {
+		return err
+	}
+
 	for _, match := range matches {
+		if hasCoordinateConflict(match.point.Lat, match.point.Lon, existingCoords) {
+			continue
+		}
 		photo, err := downloadAsset(baseURL, cfg.ApiKey, match.asset)
 		if err != nil {
 			return err
@@ -194,6 +204,7 @@ func AttachWaypointsFromGPX(app core.App, cfg *Integration, userID, trailID stri
 		if err := app.Save(record); err != nil {
 			return err
 		}
+		existingCoords = append(existingCoords, [2]float64{match.point.Lat, match.point.Lon})
 	}
 	return nil
 }
@@ -425,6 +436,30 @@ func buildWaypointName(asset Asset) string {
 		return "Imported from Immich"
 	}
 	return strings.Join(parts, ", ")
+}
+
+func loadExistingWaypointCoords(app core.App, trailID string) ([][2]float64, error) {
+	if trailID == "" {
+		return nil, nil
+	}
+	records, err := app.FindRecordsByFilter("waypoints", "trail={:trail}", "", -1, 0, dbx.Params{"trail": trailID})
+	if err != nil {
+		return nil, err
+	}
+	coords := make([][2]float64, 0, len(records))
+	for _, record := range records {
+		coords = append(coords, [2]float64{record.GetFloat("lat"), record.GetFloat("lon")})
+	}
+	return coords, nil
+}
+
+func hasCoordinateConflict(lat, lon float64, coords [][2]float64) bool {
+	for _, coord := range coords {
+		if haversineDistance(lat, lon, coord[0], coord[1]) <= duplicateCoordinateDistanceMeters {
+			return true
+		}
+	}
+	return false
 }
 
 func haversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
