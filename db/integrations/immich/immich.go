@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net/http"
 	"sort"
@@ -14,6 +15,7 @@ import (
 
 	"pocketbase/util"
 
+	"github.com/corona10/goimagehash"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
@@ -62,7 +64,11 @@ type trackPoint struct {
 }
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
-const duplicateCoordinateDistanceMeters = 5.0
+
+const (
+	duplicateCoordinateDistanceMeters = 5.0
+	similarPhotoHammingDistance       = 5
+)
 
 func ParseIntegration(raw string, encryptionKey string) (*Integration, error) {
 	raw = strings.TrimSpace(raw)
@@ -162,23 +168,24 @@ func AttachWaypointsFromGPX(app core.App, cfg *Integration, userID, trailID stri
 	if len(matches) == 0 {
 		return nil
 	}
-	if len(matches) > cfg.MaxWaypoints {
-		matches = matches[:cfg.MaxWaypoints]
-	}
 	collection, err := app.FindCollectionByNameOrId("waypoints")
 	if err != nil {
 		return err
 	}
 
-	existingCoords, err := loadExistingWaypointCoords(app, trailID)
+	waypointStates, err := loadWaypointStates(app, trailID)
 	if err != nil {
 		return err
 	}
 
+	createdWaypoints := 0
+
 	for _, match := range matches {
-		if hasCoordinateConflict(match.point.Lat, match.point.Lon, existingCoords) {
+		targetWaypoint := findWaypointByCoordinate(waypointStates, match.point.Lat, match.point.Lon)
+		if targetWaypoint == nil && createdWaypoints >= cfg.MaxWaypoints {
 			continue
 		}
+
 		photo, err := downloadAsset(baseURL, cfg.ApiKey, match.asset)
 		if err != nil {
 			return err
@@ -186,6 +193,33 @@ func AttachWaypointsFromGPX(app core.App, cfg *Integration, userID, trailID stri
 		if photo == nil {
 			continue
 		}
+		hash, err := hashFilesystemFile(photo)
+		if err != nil {
+			app.Logger().Warn(fmt.Sprintf("Unable to hash Immich asset '%s': %v", match.asset.ID, err))
+		}
+
+		if targetWaypoint != nil {
+			if hash != nil {
+				similar, err := targetWaypoint.hasSimilar(hash)
+				if err != nil {
+					app.Logger().Warn(fmt.Sprintf("Unable to evaluate Immich photo similarity for waypoint '%s': %v", targetWaypoint.record.Id, err))
+				} else if similar {
+					continue
+				}
+			}
+
+			targetWaypoint.record.Set("photos+", photo)
+			if err := app.Save(targetWaypoint.record); err != nil {
+				return err
+			}
+			if hash != nil {
+				if err := targetWaypoint.addHash(photo.Name, hash); err != nil {
+					app.Logger().Warn(fmt.Sprintf("Unable to index Immich photo for waypoint '%s': %v", targetWaypoint.record.Id, err))
+				}
+			}
+			continue
+		}
+
 		record := core.NewRecord(collection)
 		record.Load(map[string]any{
 			"name":                buildWaypointName(match.asset),
@@ -204,7 +238,14 @@ func AttachWaypointsFromGPX(app core.App, cfg *Integration, userID, trailID stri
 		if err := app.Save(record); err != nil {
 			return err
 		}
-		existingCoords = append(existingCoords, [2]float64{match.point.Lat, match.point.Lon})
+		state := newWaypointPhotoState(record)
+		if hash != nil {
+			if err := state.addHash(photo.Name, hash); err != nil {
+				app.Logger().Warn(fmt.Sprintf("Unable to index Immich photo for waypoint '%s': %v", record.Id, err))
+			}
+		}
+		waypointStates = append(waypointStates, state)
+		createdWaypoints++
 	}
 	return nil
 }
@@ -438,28 +479,57 @@ func buildWaypointName(asset Asset) string {
 	return strings.Join(parts, ", ")
 }
 
-func loadExistingWaypointCoords(app core.App, trailID string) ([][2]float64, error) {
+func loadWaypointStates(app core.App, trailID string) ([]*waypointPhotoState, error) {
 	if trailID == "" {
 		return nil, nil
 	}
+
 	records, err := app.FindRecordsByFilter("waypoints", "trail={:trail}", "", -1, 0, dbx.Params{"trail": trailID})
 	if err != nil {
 		return nil, err
 	}
-	coords := make([][2]float64, 0, len(records))
-	for _, record := range records {
-		coords = append(coords, [2]float64{record.GetFloat("lat"), record.GetFloat("lon")})
+	if len(records) == 0 {
+		return nil, nil
 	}
-	return coords, nil
+
+	fsys, err := app.NewFilesystem()
+	if err != nil {
+		return nil, err
+	}
+	defer fsys.Close()
+
+	states := make([]*waypointPhotoState, 0, len(records))
+	for _, record := range records {
+		state := newWaypointPhotoState(record)
+		names := record.GetStringSlice("photos")
+		for _, name := range names {
+			reader, err := fsys.GetReader(record.BaseFilesPath() + "/" + name)
+			if err != nil {
+				app.Logger().Warn(fmt.Sprintf("Unable to read waypoint photo '%s': %v", name, err))
+				continue
+			}
+			hash, err := hashFromReader(name, reader.Size(), reader.ModTime(), reader)
+			if err != nil {
+				app.Logger().Warn(fmt.Sprintf("Unable to hash waypoint photo '%s': %v", name, err))
+				continue
+			}
+			if err := state.addHash(name, hash); err != nil {
+				app.Logger().Warn(fmt.Sprintf("Unable to index waypoint photo '%s': %v", name, err))
+			}
+		}
+		states = append(states, state)
+	}
+
+	return states, nil
 }
 
-func hasCoordinateConflict(lat, lon float64, coords [][2]float64) bool {
-	for _, coord := range coords {
-		if haversineDistance(lat, lon, coord[0], coord[1]) <= duplicateCoordinateDistanceMeters {
-			return true
+func findWaypointByCoordinate(states []*waypointPhotoState, lat, lon float64) *waypointPhotoState {
+	for _, state := range states {
+		if haversineDistance(lat, lon, state.lat, state.lon) <= duplicateCoordinateDistanceMeters {
+			return state
 		}
 	}
-	return false
+	return nil
 }
 
 func haversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
@@ -474,3 +544,104 @@ func haversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 	return radius * c
 }
+
+type waypointPhotoState struct {
+	record *core.Record
+	lat    float64
+	lon    float64
+	index  *util.Index
+}
+
+func newWaypointPhotoState(record *core.Record) *waypointPhotoState {
+	return &waypointPhotoState{
+		record: record,
+		lat:    record.GetFloat("lat"),
+		lon:    record.GetFloat("lon"),
+		index:  util.NewIndex(),
+	}
+}
+
+func (s *waypointPhotoState) hasSimilar(hash *goimagehash.ImageHash) (bool, error) {
+	if s == nil || s.index == nil || hash == nil {
+		return false, nil
+	}
+	results, err := s.index.FindSimilar(hash, similarPhotoHammingDistance)
+	if err != nil {
+		return false, err
+	}
+	return len(results) > 0, nil
+}
+
+func (s *waypointPhotoState) addHash(name string, hash *goimagehash.ImageHash) error {
+	if s == nil || s.index == nil || hash == nil {
+		return nil
+	}
+	return s.index.AddHash(name, hash)
+}
+
+func hashFilesystemFile(file *filesystem.File) (*goimagehash.ImageHash, error) {
+	if file == nil || file.Reader == nil {
+		return nil, fmt.Errorf("invalid file")
+	}
+	reader, err := file.Reader.Open()
+	if err != nil {
+		return nil, err
+	}
+	name := file.Name
+	if name == "" {
+		name = file.OriginalName
+	}
+	return hashFromReader(name, file.Size, time.Time{}, reader)
+}
+
+func hashFromReader(name string, size int64, modTime time.Time, reader io.ReadSeekCloser) (*goimagehash.ImageHash, error) {
+	if reader == nil {
+		return nil, fmt.Errorf("nil reader")
+	}
+	file := &readSeekFile{
+		ReadSeekCloser: reader,
+		info: simpleFileInfo{
+			name:    name,
+			size:    size,
+			modTime: modTime,
+		},
+	}
+	defer file.Close()
+
+	hash, _, err := util.LoadAndHash(file)
+	if err != nil {
+		return nil, err
+	}
+	return hash, nil
+}
+
+type readSeekFile struct {
+	io.ReadSeekCloser
+	info simpleFileInfo
+}
+
+func (f *readSeekFile) Stat() (fs.FileInfo, error) {
+	return f.info, nil
+}
+
+func (f *readSeekFile) Close() error {
+	if f.ReadSeekCloser == nil {
+		return nil
+	}
+	err := f.ReadSeekCloser.Close()
+	f.ReadSeekCloser = nil
+	return err
+}
+
+type simpleFileInfo struct {
+	name    string
+	size    int64
+	modTime time.Time
+}
+
+func (i simpleFileInfo) Name() string       { return i.name }
+func (i simpleFileInfo) Size() int64        { return i.size }
+func (i simpleFileInfo) Mode() fs.FileMode  { return 0o444 }
+func (i simpleFileInfo) ModTime() time.Time { return i.modTime }
+func (i simpleFileInfo) IsDir() bool        { return false }
+func (i simpleFileInfo) Sys() any           { return nil }
