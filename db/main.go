@@ -95,7 +95,7 @@ func initializeMeiliSearch() meilisearch.ServiceManager {
 
 func ensureMeilisearchIndexes(client meilisearch.ServiceManager) error {
 	trailsSortable := []string{"created", "date", "difficulty", "distance", "elevation_gain", "elevation_loss", "name", "duration", "author", "like_count"}
-	trailsFilterable := []string{"_geo", "author", "category", "completed", "date", "difficulty", "distance", "elevation_gain", "elevation_loss", "public", "shares", "tags", "likes"}
+	trailsFilterable := []string{"_geo", "_geojson", "author", "category", "completed", "date", "difficulty", "distance", "elevation_gain", "elevation_loss", "public", "shares", "tags", "likes"}
 	if err := ensureMeilisearchIndex(client, "trails", trailsSortable, trailsFilterable); err != nil {
 		return err
 	}

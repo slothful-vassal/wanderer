@@ -42,9 +42,10 @@ func documentFromTrailRecord(app core.App, r *core.Record, author *core.Record, 
 		category = trailCategory.GetString("name")
 	}
 
-	polyline, err := getPolyline(app, r)
+	polyline, geojson, err := getTrailGeometry(app, r)
 	if err != nil {
 		polyline = ""
+		geojson = nil
 	}
 
 	domain := ""
@@ -85,6 +86,10 @@ func documentFromTrailRecord(app core.App, r *core.Record, author *core.Record, 
 			"lat": r.GetFloat("lat"),
 			"lng": r.GetFloat("lon"),
 		},
+	}
+
+	if geojson != nil {
+		document["_geojson"] = geojson
 	}
 
 	if includeShares {
@@ -134,44 +139,72 @@ func difficultyToNumber(difficulty string) int32 {
 	return 0
 }
 
-func getPolyline(app core.App, r *core.Record) (string, error) {
+func getTrailGeometry(app core.App, r *core.Record) (string, map[string]any, error) {
 	gpxPath := r.GetString("gpx")
 	if len(gpxPath) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
 	avatarKey := r.BaseFilesPath() + "/" + gpxPath
 	fsys, err := app.NewFilesystem()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer fsys.Close()
 
 	gpxFile, err := fsys.GetReader(avatarKey)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer gpxFile.Close()
 
 	content := new(bytes.Buffer)
 	_, err = io.Copy(content, gpxFile)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	gpxData, err := gpx.Parse(content)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	gpxData.SimplifyTracks(50)
-	coordinates := make([][]float64, 4)
+	var coordinates [][]float64
+	var geoSegments [][][]float64
 	for _, trk := range gpxData.Tracks {
 		for _, seg := range trk.Segments {
+			var geoSegment [][]float64
 			for _, pt := range seg.Points {
 				coordinates = append(coordinates, []float64{pt.Latitude, pt.Longitude})
+				geoSegment = append(geoSegment, []float64{pt.Longitude, pt.Latitude})
+			}
+			if len(geoSegment) > 0 {
+				geoSegments = append(geoSegments, geoSegment)
 			}
 		}
 	}
-	return string(polyline.EncodeCoords(coordinates)), nil
+
+	polylineValue := ""
+	if len(coordinates) > 0 {
+		polylineValue = string(polyline.EncodeCoords(coordinates))
+	}
+
+	var geojson map[string]any
+	switch len(geoSegments) {
+	case 0:
+		geojson = nil
+	case 1:
+		geojson = map[string]any{
+			"type":        "LineString",
+			"coordinates": geoSegments[0],
+		}
+	default:
+		geojson = map[string]any{
+			"type":        "MultiLineString",
+			"coordinates": geoSegments,
+		}
+	}
+
+	return polylineValue, geojson, nil
 }
 
 func documentFromListRecord(r *core.Record, author *core.Record, includeShares bool) (map[string]interface{}, error) {

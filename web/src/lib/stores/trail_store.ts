@@ -102,15 +102,16 @@ export async function trails_search_bounding_box(northEast: M.LngLat, southWest:
         filterText = buildFilterText(user, filter, false);
     }
 
+    const boundingBoxFilter = `_geoBoundingBox([${northEast.lat}, ${northEast.lng}], [${southWest.lat}, ${southWest.lng}])`;
+    const polygonFilter = `_geoPolygon([${northEast.lat}, ${northEast.lng}], [${southWest.lat}, ${northEast.lng}], [${southWest.lat}, ${southWest.lng}], [${northEast.lat}, ${southWest.lng}])`;
+    const filters = [`(${boundingBoxFilter} OR ${polygonFilter})`, ...(filterText?.trim()?.length ? [filterText] : [])];
+
     let r = await fetch("/api/v1/search/trails", {
         method: "POST",
         body: JSON.stringify({
             q: "",
             options: {
-                filter: [
-                    `_geoBoundingBox([${northEast.lat}, ${northEast.lng}], [${southWest.lat}, ${southWest.lng}])`,
-                    filterText
-                ],
+                filter: filters,
                 sort: [`${filter.sort}:${filter.sortOrder == "+" ? "asc" : "desc"}`,],
                 attributesToRetrieve: [...defaultTrailSearchAttributes, ...(includePolyline ? ["polyline"] : [])],
                 hitsPerPage: 500,
