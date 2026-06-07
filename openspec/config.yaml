@@ -1,0 +1,8 @@
+project: wanderer
+profile: ospx
+specs_dir: specs
+changes_dir: changes
+archive_dir: changes/archive
+notes:
+  - Routing plugin planning is documented in openspec/design/routing-plugin.md (non-normative design reference).
+  - Each routing phase should be implemented as a separate OSPX change.
