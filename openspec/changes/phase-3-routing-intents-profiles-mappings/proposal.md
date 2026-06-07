@@ -1,6 +1,6 @@
 # Change: routing-intents-profiles-mappings
 
-> **Phase 3 von 5** · hängt ab von: Phase 1 · Hebt die fest verdrahteten Phase-1-Defaults in persistente, administrierbare Intents/Mappings/Profile.
+> **Phase 3 of 5** · depends on: Phase 1 · Lift the hard-coded phase-1 defaults into persistent, administrable intents/mappings/profiles.
 
 ## Why
 

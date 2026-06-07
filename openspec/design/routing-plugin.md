@@ -1,58 +1,58 @@
-# Routing-Plugin-Konzept
+# Routing Plugin Concept
 
-> **Internes Design-Dokument**
-> Dies ist die Design-Rationale und das Ziel-Narrativ für das Routing-Plugin.
-> Die **normative, prüfbare Spezifikation** liegt in `openspec/specs/routing/`
-> und den Phasen-Deltas unter `openspec/changes/`. Bei Abweichungen ist OpenSpec
-> maßgeblich; dieses Dokument erklärt das „Warum" und wird entfernt, sobald die
-> Phasen umgesetzt und manuell validiert sind.
+> **Internal design document**
+> This is the design rationale and target narrative for the routing plugin.
+> The **normative, testable specification** lives in `openspec/specs/routing/`
+> and the phase deltas under `openspec/changes/`. On any conflict, OpenSpec
+> is authoritative; this document explains the "why" and will be removed once
+> the phases are implemented and manually validated.
 
-Dieses Dokument beschreibt den Zielzustand für Routing-Plugins in Wanderer. Es baut auf dem Plugin-System für `trails`-Plugins und der Erweiterung um `assets`-Plugins auf. Ziel ist, die aktuelle direkte Valhalla-Integration durch einen generischen Plugin-Typ `routing` zu ersetzen. Valhalla soll dabei das erste First-Party-Routing-Plugin bleiben; BRouter soll als zweites First-Party-Plugin zeigen, dass die Abstraktion auch für eine strukturell andere Engine trägt.
+This document describes the target state for routing plugins in Wanderer. It builds on the plugin system for `trails` plugins and its extension for `assets` plugins. The goal is to replace the current direct Valhalla integration with a generic `routing` plugin type. Valhalla remains the first first-party routing plugin; BRouter, as the second first-party plugin, demonstrates that the abstraction also holds for a structurally different engine.
 
-## Zielzustand
+## Target state
 
-Wanderer behandelt Routing und Höheninformationen als austauschbare Plugin-Capabilities hinter einer provider-neutralen Host-API. Nutzer denken in Wanderer-Intents wie Wandern, Tourenrad, Gravel oder Auto, nicht in provider-spezifischen Begriffen. Mehrere Engines können dieselbe Anfrage parallel beantworten, sodass der Editor vergleichbare Alternativen nebeneinander anzeigen kann.
+Wanderer treats routing and elevation as interchangeable plugin capabilities behind a provider-neutral host API. Users think in Wanderer intents such as walking, touring bike, gravel, or car, not in provider-specific terms. Multiple engines can answer the same request in parallel, so the editor can show comparable alternatives side by side.
 
-Valhalla und BRouter sollen beide First-Party-Routing-Plugins sein. Valhalla ist kostenmodell-/optionsbasiert, BRouter profil- und `.brf`-basiert. Zusammen prüfen sie die wichtigste Architekturfrage: Ob Wanderer eine gemeinsame Routing-Sprache anbieten kann, ohne die nativen Profilsprachen der Provider ineinander übersetzen zu müssen.
+Valhalla and BRouter are both intended to be first-party routing plugins. Valhalla is costing-/options-based, BRouter is profile- and `.brf`-based. Together they test the most important architectural question: whether Wanderer can offer a shared routing language without having to translate the providers' native profile languages into one another.
 
-Für die Konzeptvalidierung wird GraphHopper als dritter Referenzfall mitgedacht. GraphHopper ist nicht primärer Umsetzungsfokus, hilft aber, die Abstraktion gegen eine weitere offene Routing-Engine zu prüfen: vordefinierte Profile, Custom Models, alternative Routen, Elevation und serverseitige HTTP-API liegen dort anders als bei Valhalla und BRouter.
+For concept validation, GraphHopper is kept in mind as a third reference case. GraphHopper is not the primary implementation focus, but it helps validate the abstraction against another open routing engine: predefined profiles, custom models, alternative routes, elevation, and a server-side HTTP API are shaped differently there than in Valhalla and BRouter.
 
-## Tragende Festlegungen
+## Load-bearing decisions
 
-- Der kanonische Wanderer-Intent ist die gemeinsame Routing-Sprache und der autoritative Vergleichsschlüssel. Vergleichbarkeit ist nur innerhalb desselben Intent-Keys definiert.
-- Native Profile sind Plugin-Dialekte. Mappings sind die Pflichtbrücke zwischen Wanderer-Intents und provider-spezifischen Profilen oder Optionen.
-- Das Frontend spricht ausschließlich die Wanderer-Routing-API. Provider-spezifische Request- und Response-Formate, Credentials und Profilformate bleiben in der Plugin-Schicht.
-- Der Host besitzt Discovery, User-Instanzen, Orchestrierung, parallelen Fan-out, Teilfehler-Aggregation, Policy Enforcement und Persistenz. Plugins besitzen nur die Übersetzung in das Provider-Protokoll.
-- `route.v1` und `elevation.v1` sind unabhängige Capabilities. Routing und Höheninformationen können von unterschiedlichen Plugins kommen.
-- Nutzer können eigene Routing-Profile anlegen, inklusive provider-spezifischer Profildateien wie BRouter-`.brf`.
-- Mehrere Routing-Engines können für denselben Nutzer aktiv sein. Der Routen-Editor kann Alternativen von einer oder mehreren Engines anfragen.
+- The canonical Wanderer intent is the shared routing language and the authoritative comparison key. Comparability is defined only within the same intent key.
+- Native profiles are plugin dialects. Mappings are the mandatory bridge between Wanderer intents and provider-specific profiles or options.
+- The frontend speaks exclusively the Wanderer routing API. Provider-specific request and response formats, credentials, and profile formats stay in the plugin layer.
+- The host owns discovery, user instances, orchestration, parallel fan-out, partial-failure aggregation, policy enforcement, and persistence. Plugins own only the translation into the provider protocol.
+- `route.v1` and `elevation.v1` are independent capabilities. Routing and elevation can come from different plugins.
+- Users can create their own routing profiles, including provider-specific profile files such as BRouter `.brf`.
+- Multiple routing engines can be active for the same user. The route editor can request alternatives from one or more engines.
 
-## Permanente Grenzen
+## Permanent boundaries
 
-- Keine Cross-Engine-Routenoptimierung: Der Host orchestriert unabhängige Kandidaten mehrerer Engines, stitcht aber keine Segmente verschiedener Engines zu einer optimierten Route zusammen.
-- Keine gemeinsame native Profilsprache: Wanderer-Intents mappen auf native Profile. Sie übersetzen keine BRouter-`.brf`-Profile in Valhalla `costing_options` oder umgekehrt.
-- Plugins erhalten keinen direkten Netzwerkzugriff. Sie nutzen weiter die bestehenden Host-Requests über deklarierte Connectors.
-- Plugins persistieren keine beliebigen Dateien selbst. User-Profile und Profildateien gehören dem Host und werden Plugins nur als begrenzter Input übergeben.
+- No cross-engine route optimization: the host orchestrates independent candidates from multiple engines but does not stitch segments from different engines into one optimized route.
+- No shared native profile language: Wanderer intents map onto native profiles. They do not translate BRouter `.brf` profiles into Valhalla `costing_options` or vice versa.
+- Plugins get no direct network access. They keep using the existing host requests via declared connectors.
+- Plugins do not persist arbitrary files themselves. User profiles and profile files belong to the host and are passed to plugins only as bounded input.
 
-## Aktueller Zustand
+## Current state
 
-Routing ist aktuell stark an Valhalla gekoppelt:
+Routing is currently tightly coupled to Valhalla:
 
-- `/api/v1/valhalla/route` proxied Valhalla `/route`.
-- `/api/v1/valhalla/height` proxied Valhalla `/height`.
-- `web/src/lib/models/valhalla.ts` modelliert Valhalla-Costing und Responses.
-- `web/src/lib/stores/valhalla_store.svelte.ts` baut Valhalla-Requests, decodiert Valhalla-Shapes und ruft Höhenkorrektur auf.
-- `GPX.correctElevation()` ruft direkt `/api/v1/valhalla/height` auf.
+- `/api/v1/valhalla/route` proxies Valhalla `/route`.
+- `/api/v1/valhalla/height` proxies Valhalla `/height`.
+- `web/src/lib/models/valhalla.ts` models Valhalla costing and responses.
+- `web/src/lib/stores/valhalla_store.svelte.ts` builds Valhalla requests, decodes Valhalla shapes, and calls height correction.
+- `GPX.correctElevation()` calls `/api/v1/valhalla/height` directly.
 
-Der gewünschte Zustand ist:
+The desired state is:
 
-- Das Frontend besitzt Route Editing, GPX-State und UI-Verhalten.
-- Der Backend-Host besitzt Plugin Discovery, User-Instanzen, Orchestrierung, Policy und Persistenz.
-- Routing-Plugins besitzen provider-spezifische Protokollübersetzung.
+- The frontend owns route editing, GPX state, and UI behavior.
+- The backend host owns plugin discovery, user instances, orchestration, policy, and persistence.
+- Routing plugins own provider-specific protocol translation.
 
-## Plugin-Manifest
+## Plugin manifest
 
-Ein Routing-Plugin nutzt die bestehende Plugin-Bundle-Struktur:
+A routing plugin uses the existing plugin bundle structure:
 
 ```json
 {
@@ -125,22 +125,22 @@ Ein Routing-Plugin nutzt die bestehende Plugin-Bundle-Struktur:
 }
 ```
 
-Das Manifest beschreibt, was ein Plugin kann. Es ist nicht die Quelle der User-Präferenzen. Einstellungen wie "BRouter als primäre Routing-Engine und Valhalla für Höheninformationen" liegen in host-eigenen User-Einstellungen.
+The manifest describes what a plugin can do. It is not the source of user preferences. Settings such as "BRouter as the primary routing engine and Valhalla for elevation" live in host-owned user settings.
 
 ## Capabilities
 
-Routing-Plugins starten mit zwei unabhängigen Capabilities.
+Routing plugins start with two independent capabilities.
 
-| Capability | Zweck |
+| Capability | Purpose |
 | --- | --- |
-| `route.v1` | Berechnet einen oder mehrere Routenkandidaten zwischen geordneten Ankerpunkten. |
-| `elevation.v1` | Liefert Höhenwerte für eine bestehende Linie oder Punktliste. |
+| `route.v1` | Computes one or more route candidates between ordered anchor points. |
+| `elevation.v1` | Returns elevation values for an existing line or point list. |
 
-Die Trennung ist wichtig, weil eine Engine für eine Aufgabe stark sein kann und für die andere nicht. BRouter kann starkes Routing liefern, während Valhalla weiterhin Höheninformationen beisteuert. Ein zukünftiges Elevation-only-Plugin soll gültig sein, ohne `route.v1` zu implementieren.
+The separation matters because an engine may be strong at one task and not the other. BRouter can provide strong routing while Valhalla still supplies elevation. A future elevation-only plugin should be valid without implementing `route.v1`.
 
 ### `route.v1` input
 
-Der Host sendet normalisierten, bereits aufgelösten Routing-Input an das ausgewählte Plugin. Der kanonische Wanderer-Intent ist nicht Teil des Plugin-Inputs; der Host hat ihn bereits in ein natives Profil, `nativeConfig` und kanonische Preferences übersetzt.
+The host sends normalized, already-resolved routing input to the selected plugin. The canonical Wanderer intent is not part of the plugin input; the host has already translated it into a native profile, `nativeConfig`, and canonical preferences.
 
 ```json
 {
@@ -179,11 +179,11 @@ Der Host sendet normalisierten, bereits aufgelösten Routing-Input an das ausgew
 }
 ```
 
-`preferences` sind absichtlich generisch und optional. Ein Plugin mappt unterstützte Werte in sein natives Format und ignoriert nicht unterstützte Werte. Provider-spezifische Advanced-Einstellungen gehören in native Profile, Plugin-Konfiguration oder `native_config`, nicht in die generische API. `profile.nativeConfig` ist der Zustellweg für solche aufgelösten provider-spezifischen Mapping-Optionen, z.B. Valhalla-`costing_options` oder Template-Parameter für ein BRouter-Profil. `mode` bleibt im Plugin-Input als Convenience und Validierungshilfe erhalten, obwohl viele Plugins ihn aus dem aufgelösten Profil ableiten können.
+`preferences` are intentionally generic and optional. A plugin maps supported values into its native format and ignores unsupported values. Provider-specific advanced settings belong in native profiles, plugin configuration, or `native_config`, not in the generic API. `profile.nativeConfig` is the delivery path for such resolved provider-specific mapping options, e.g. Valhalla `costing_options` or template parameters for a BRouter profile. `mode` is kept in the plugin input as a convenience and validation aid, even though many plugins can derive it from the resolved profile.
 
-`auth` und `config` sind keine routing-spezifischen Schemas. Sie sind die vom Basis-Plugin-System bereitgestellten, host-seitig aufgelösten Instance-Daten für diese konkrete Plugin-Invocation. `config` enthält nicht-geheime Instanzkonfiguration, `auth` enthält nur die für das Plugin freigegebenen Auth-Metadaten oder Referenzen. Credentials für Provider-HTTP-Requests werden weiterhin vom Host am Connector angebracht. Die Routing-Spezifikation behandelt beide Objekte als opaque; ein Routing-Plugin muss seine erwarteten Config- Felder in der Plugin-Metadata dokumentieren. Wenn keine Daten nötig sind, sendet der Host `{}`.
+`auth` and `config` are not routing-specific schemas. They are the host-resolved instance data provided by the base plugin system for this concrete plugin invocation. `config` holds non-secret instance configuration, `auth` holds only the auth metadata or references released to the plugin. Credentials for provider HTTP requests are still attached by the host at the connector. The routing specification treats both objects as opaque; a routing plugin must document its expected config fields in the plugin metadata. When no data is needed, the host sends `{}`.
 
-`options.alternatives` ist die Anzahl nativer Kandidaten, die der Host bei dieser konkreten Engine anfragt; sie ist nicht identisch mit der finalen UI-Anzahl `desiredVariants`. `options.includeElevation` darf `false` sein, auch wenn der Host-Request Elevation angefragt hat, wenn der Host Höhen separat über `elevation.v1` orchestriert.
+`options.alternatives` is the number of native candidates the host requests from this specific engine; it is not the same as the final UI count `desiredVariants`. `options.includeElevation` may be `false` even when the host request asked for elevation, if the host orchestrates elevation separately via `elevation.v1`.
 
 ### `route.v1` output
 
@@ -226,35 +226,35 @@ Plugins liefern normalisierte Routenkandidaten:
 }
 ```
 
-Das Plugin liefert keine `provider`-, `pluginId`- oder `instanceId`-Felder im Kandidaten. Diese Provenienz kennt der Host aus der Invocation und ergänzt sie erst in der Host-Route-Response.
+The plugin does not provide `provider`, `pluginId`, or `instanceId` fields in the candidate. The host knows this provenance from the invocation and adds it only in the host route response.
 
-Pflicht:
+Required:
 
-| Feld | Pflicht |
+| Field | Required |
 | --- | --- |
-| `candidates` oder `error` | Genau eine verwertbare Ergebnisform. |
-| `candidate.id` | Native Kandidaten-ID, eindeutig innerhalb der Plugin-Response. |
-| `candidate.segments` | Segmentvertrag für alle benachbarten Anchor-Paare. |
-| `candidate.summary.distance` | Gesamtdistanz in Metern. |
-| `candidate.summary.duration` | Gesamtdauer in Sekunden. |
-| `segment.fromAnchor` / `segment.toAnchor` | Anchor-Zuordnung des Segments. |
-| `segment.distance` | Segmentdistanz in Metern. |
-| `segment.duration` | Segmentdauer in Sekunden. |
-| Segment-`geometry` oder `shapeRange` | Entweder eigene Segment-Polyline oder Slice in Kandidaten-Polyline. |
+| `candidates` or `error` | Exactly one usable result form. |
+| `candidate.id` | Native candidate ID, unique within the plugin response. |
+| `candidate.segments` | Segment contract for all adjacent anchor pairs. |
+| `candidate.summary.distance` | Total distance in meters. |
+| `candidate.summary.duration` | Total duration in seconds. |
+| `segment.fromAnchor` / `segment.toAnchor` | Anchor assignment of the segment. |
+| `segment.distance` | Segment distance in meters. |
+| `segment.duration` | Segment duration in seconds. |
+| Segment `geometry` or `shapeRange` | Either own segment polyline or a slice into the candidate polyline. |
 
 Optional:
 
-| Feld | Bedeutung |
+| Field | Meaning |
 | --- | --- |
-| `candidate.geometry` | Gesamtgeometrie für Preview, Vergleich und `shapeRange`. |
-| `summary.elevationGain` / `summary.elevationLoss` | Höhenmetrik, wenn das Plugin brauchbare Höhen kennt. |
-| `warnings` | Plugin-Warnings zum Kandidaten oder Ergebnis. |
+| `candidate.geometry` | Full geometry for preview, comparison, and `shapeRange`. |
+| `summary.elevationGain` / `summary.elevationLoss` | Elevation metric when the plugin knows usable heights. |
+| `warnings` | Plugin warnings about the candidate or result. |
 
-Pflicht-Geometrieformat für Plugin-Output ist `encoded_polyline` mit `precision: 6`. Dieses Format ist normativ festgelegt: Es verwendet den Google Encoded Polyline Algorithm mit Skalierungsfaktor `1e6`. Die decodierte Punktliste besteht aus WGS84-Paaren in der Reihenfolge `[lat, lon]`, also Latitude zuerst und Longitude danach. Diese Reihenfolge gilt für Kandidaten- Geometrien, Segment-Geometrien, `shapeRange`-Slices und `elevation.v1`- Geometrien. GeoJSON-übliche `[lon, lat]`-Koordinaten sind in diesem Feld nicht zulässig. GPX und GeoJSON sind keine Pflicht-Outputformate für Plugins; der Host bleibt die einzige GPX-Autorität.
+The mandatory geometry format for plugin output is `encoded_polyline` with `precision: 6`. This format is normatively fixed: it uses the Google Encoded Polyline Algorithm with scaling factor `1e6`. The decoded point list consists of WGS84 pairs in the order `[lat, lon]`, i.e. latitude first and longitude second. This order applies to candidate geometries, segment geometries, `shapeRange` slices, and `elevation.v1` geometries. GeoJSON-style `[lon, lat]` coordinates are not allowed in this field. GPX and GeoJSON are not mandatory output formats for plugins; the host remains the sole GPX authority.
 
-Der Host konvertiert akzeptierte Kandidaten zu GPX für den bestehenden Editor. Der aktuelle Editor ist segmentorientiert: Jede Strecke zwischen zwei benachbarten Ankerpunkten liegt als ein `trkseg` vor, und Undo/Redo, Insert, Edit, Delete, Crop und Anchor-Reordering arbeiten über diese Segment-Indizes. Ein Routenkandidat muss deshalb die Beziehung zwischen Anchors und Segmenten erhalten.
+The host converts accepted candidates to GPX for the existing editor. The current editor is segment-oriented: each stretch between two adjacent anchor points exists as one `trkseg`, and undo/redo, insert, edit, delete, crop, and anchor reordering operate on these segment indices. A route candidate must therefore preserve the relationship between anchors and segments.
 
-`geometry` auf Kandidatenebene ist optionale Gesamtgeometrie. Sie ist nützlich für Preview, Vergleich und Summary. `segments` ist der editor-kompatible Vertrag und muss ein Segment pro benachbartem Anchor-Paar enthalten:
+`geometry` at the candidate level is optional full geometry. It is useful for preview, comparison, and summary. `segments` is the editor-compatible contract and must contain one segment per adjacent anchor pair:
 
 ```text
 anchors[0] -> anchors[1] = segments[0]
@@ -262,9 +262,9 @@ anchors[1] -> anchors[2] = segments[1]
 anchors[n] -> anchors[n+1] = segments[n]
 ```
 
-Jedes Segment sollte eigene Encoded-Polyline-Geometrie, Distanz und Dauer enthalten. Das ist die bevorzugte Ausgabeform, weil der Host jedes Segment direkt als ein GPX-`trkseg` materialisieren und Zeitstempel pro Segment aus `duration` ableiten kann.
+Each segment should contain its own encoded-polyline geometry, distance, and duration. This is the preferred output form because the host can materialize each segment directly as one GPX `trkseg` and derive per-segment timestamps from `duration`.
 
-Wenn eine Engine nur eine optimierte Gesamtgeometrie zurückgeben kann, darf das Plugin stattdessen `shapeRange` pro Segment liefern:
+If an engine can only return a single optimized full geometry, the plugin may instead provide `shapeRange` per segment:
 
 ```json
 {
@@ -279,13 +279,13 @@ Wenn eine Engine nur eine optimierte Gesamtgeometrie zurückgeben kann, darf das
 }
 ```
 
-`shapeRange.start` und `shapeRange.end` sind inklusive Punkt-Indizes in der decodierten Kandidaten-Geometrie, also in der normierten `[lat, lon]`- Punktliste. Segment-Geometrie bleibt bevorzugt, weil sie Mehrdeutigkeiten beim host-seitigen Slicing geteilter Grenzpunkte vermeidet.
+`shapeRange.start` and `shapeRange.end` are inclusive point indices into the decoded candidate geometry, i.e. into the normalized `[lat, lon]` point list. Segment geometry remains preferred because it avoids ambiguity in host-side slicing of shared boundary points.
 
-Der Editor soll nicht mehr wissen müssen, ob die Linie aus Valhalla, BRouter, GraphHopper, OSRM oder host-nativer Luftlinie stammt.
+The editor should no longer need to know whether the line came from Valhalla, BRouter, GraphHopper, OSRM, or a host-native straight line.
 
 ### `elevation.v1` input
 
-Elevation-Requests müssen mit Linien funktionieren, die von beliebigen Plugins oder aus host-nativer Luftlinie stammen:
+Elevation requests must work with lines that come from any plugin or from a host-native straight line:
 
 ```json
 {
@@ -308,9 +308,9 @@ Elevation-Requests müssen mit Linien funktionieren, die von beliebigen Plugins 
 }
 ```
 
-`geometry` nutzt wie `route.v1` das Pflichtformat `encoded_polyline` mit `precision: 6`. `options.preserveExisting` signalisiert, dass der Host bei fehlenden oder ungültigen neuen Höhen vorhandene GPX-Höhen punktweise behalten soll.
+`geometry` uses, like `route.v1`, the mandatory format `encoded_polyline` with `precision: 6`. `options.preserveExisting` signals that, for missing or invalid new heights, the host should keep existing GPX heights point by point.
 
-`auth` und `config` folgen derselben Semantik wie bei `route.v1`: Sie sind opaque Instance-Daten aus dem Basis-Plugin-System, nicht Teil des provider-neutralen Elevation-Vertrags.
+`auth` and `config` follow the same semantics as in `route.v1`: they are opaque instance data from the base plugin system, not part of the provider-neutral elevation contract.
 
 ### `elevation.v1` output
 
@@ -330,250 +330,250 @@ Elevation-Requests müssen mit Linien funktionieren, die von beliebigen Plugins 
 }
 ```
 
-Festlegungen:
+Rules:
 
-- `heights.length` muss der Anzahl decodierter Geometriepunkte entsprechen, außer das Plugin liefert einen strukturierten Fehler.
-- Jeder Höhenwert ist Meter über Meer oder `null`.
-- `null` bedeutet: Das Plugin hat für diesen Punkt keine verlässliche Höhe.
-- Gültige neue Höhenwerte ersetzen vorhandene Höhen punktweise.
-- Bei `null` behält der Host vorhandene GPX-Höhen für diesen Punkt bei, sofern vorhanden.
-- Wenn bei `null` keine vorhandene Höhe existiert, bleibt der Punkt ohne Höhe.
+- `heights.length` must match the number of decoded geometry points, unless the plugin returns a structured error.
+- Each height value is meters above sea level or `null`.
+- `null` means: the plugin has no reliable height for this point.
+- Valid new height values replace existing heights point by point.
+- For `null`, the host keeps the existing GPX height for that point, if present.
+- If no existing height exists for a `null`, the point stays without a height.
 
-Aus einem `elevation.v1`-Call leitet der Host nur die Statuswerte `complete`, `partial` oder `failed` ab. `included`, `none` und `pending` sind rein host-seitige Zustände. Die kanonische Enum-Tabelle steht in der Host-Route-Response.
+From an `elevation.v1` call the host derives only the status values `complete`, `partial`, or `failed`. `included`, `none`, and `pending` are purely host-side states. The canonical enum table is in the host route response.
 
-## Provider-Profillandschaft
+## Provider profile landscape
 
-"Profil" bedeutet je nach Engine etwas anderes. Wanderer muss deshalb zwischen generischen Wanderer-Intents für Standardnutzer und provider-nativen Profilen für Advanced-Use-Cases unterscheiden.
+"Profile" means something different depending on the engine. Wanderer must therefore distinguish between generic Wanderer intents for standard users and provider-native profiles for advanced use cases.
 
-Für Standardnutzer bietet Wanderer eine stabile Liste kanonischer Intents. Für Advanced-Nutzer können Plugins zusätzlich provider-spezifische Profile, Optionen oder Upload-Formate anbieten.
+For standard users, Wanderer offers a stable list of canonical intents. For advanced users, plugins can additionally offer provider-specific profiles, options, or upload formats.
 
-### Valhalla-Profile
+### Valhalla profiles
 
-Valhalla bietet primär keine benannten Profildateien an. Valhalla nutzt `costing`-Modelle plus `costing_options`. Ein Valhalla-Plugin mappt Wanderer-Intents auf diese Costings und Options-Presets.
+Valhalla primarily does not offer named profile files. Valhalla uses `costing` models plus `costing_options`. A Valhalla plugin maps Wanderer intents onto these costings and option presets.
 
-Dokumentierte Valhalla-Costing-Modelle:
+Documented Valhalla costing models:
 
-| Valhalla costing | Wanderer-Kategorie | Hinweise |
+| Valhalla costing | Wanderer category | Notes |
 | --- | --- | --- |
-| `pedestrian` | Foot | Walking-Routing; bevorzugt Gehwege und Fußwege leicht, meidet Stufen und Gassen leicht. |
-| `bicycle` | Bike | Fahrrad-Routing mit konfigurierbarem Fahrradtyp, Oberfläche, Hügeln, Straßen, Fähren und Geschwindigkeit. |
-| `auto` | Motor | Auto-Routing mit Auto-Zugang und Turn Restrictions. |
-| `truck` | Motor | Wie Auto, aber mit Truck-Zugang und Fahrzeuggrenzen wie Breite, Höhe und Gewicht. |
-| `bus` | Motor / Transitbetrieb | Straßenrouting für Busse. Für Wanderer-Normalnutzer eher nicht relevant. |
-| `taxi` | Motor | Wie Auto, kann aber taxi-zugängliche Spuren bevorzugen. |
-| `motor_scooter` | Motor | Scooter-/Moped-Routing, typischerweise mit Vermeidung höherer Straßenklassen. |
-| `motorcycle` | Motor / Adventure | Beta; kann zwischen Straßentouring und Tracks/Trails getuned werden. |
-| `bikeshare` | Mixed | Beta; kombiniert Fuß- und Fahrradrouting über Bike-Share-Stationen. |
-| `auto_pedestrian` | Mixed | Beta; startet mit Auto und endet zu Fuß, mit Parkplätzen als Übergang. |
-| `multimodal` | Transit | Fuß plus Transit; benötigt Transitdaten und ist kein einfaches Outdoor-Profil. |
+| `pedestrian` | Foot | Walking routing; slightly prefers sidewalks and footways, slightly avoids steps and alleys. |
+| `bicycle` | Bike | Bicycle routing with configurable bike type, surface, hills, roads, ferries, and speed. |
+| `auto` | Motor | Car routing with car access and turn restrictions. |
+| `truck` | Motor | Like car, but with truck access and vehicle limits such as width, height, and weight. |
+| `bus` | Motor / transit operations | Road routing for buses. Not really relevant for regular Wanderer users. |
+| `taxi` | Motor | Like car, but can prefer taxi-accessible lanes. |
+| `motor_scooter` | Motor | Scooter/moped routing, typically avoiding higher road classes. |
+| `motorcycle` | Motor / Adventure | Beta; can be tuned between road touring and tracks/trails. |
+| `bikeshare` | Mixed | Beta; combines foot and bicycle routing via bike-share stations. |
+| `auto_pedestrian` | Mixed | Beta; starts by car and ends on foot, with parking lots as the transition. |
+| `multimodal` | Transit | Foot plus transit; needs transit data and is not a simple outdoor profile. |
 
-Valhalla unterstützt außerdem Optionen wie `shortest`, Avoid-/Favor-Faktoren, harte Exclusions, Alternativrouten, Sprache, Datum/Zeit und Formatoptionen. Das Plugin sollte Standardnutzern nur eine kuratierte Teilmenge zeigen und rohe `costing_options` als provider-spezifische Advanced-Konfiguration behandeln.
+Valhalla also supports options such as `shortest`, avoid/favor factors, hard exclusions, alternative routes, language, date/time, and format options. The plugin should show standard users only a curated subset and treat raw `costing_options` as provider-specific advanced configuration.
 
-Sinnvolle Valhalla-Built-ins für Wanderer:
+Reasonable Valhalla built-ins for Wanderer:
 
-| Wanderer-Profil | Valhalla-Mapping |
+| Wanderer profile | Valhalla mapping |
 | --- | --- |
-| `walking` | `pedestrian` mit konservativen Walking-Defaults. |
-| `hiking` | `pedestrian` mit trail-/track-freundlichen und hügelbewussten Optionen, soweit möglich. |
-| `road_bike` | `bicycle` mit `bicycle_type: "Road"` und Präferenz für befestigte Straßen. |
-| `touring_bike` | `bicycle` mit `bicycle_type: "Hybrid"` und balancierter Road-/Cycleway-Präferenz. |
-| `mountain_bike` | `bicycle` mit `bicycle_type: "Mountain"` und höherer Toleranz für Tracks/Oberflächen. |
+| `walking` | `pedestrian` with conservative walking defaults. |
+| `hiking` | `pedestrian` with trail-/track-friendly and hill-aware options where possible. |
+| `road_bike` | `bicycle` with `bicycle_type: "Road"` and a preference for paved roads. |
+| `touring_bike` | `bicycle` with `bicycle_type: "Hybrid"` and balanced road/cycleway preference. |
+| `mountain_bike` | `bicycle` with `bicycle_type: "Mountain"` and higher tolerance for tracks/surfaces. |
 | `car` | `auto`. |
 | `scooter` | `motor_scooter`. |
-| `motorcycle` | `motorcycle`, als Advanced oder Beta markiert. |
+| `motorcycle` | `motorcycle`, marked as advanced or beta. |
 
-### BRouter-Profile
+### BRouter profiles
 
-BRouter ist profilzentriert. Ein Profil ist ein `.brf`-Cost-Function-Skript, nicht nur ein Preset-Name. Dadurch eignet sich BRouter besonders gut für hochgeladene User-Profile, weil das native Format bereits persönliche Routing-Präferenzen ausdrückt.
+BRouter is profile-centric. A profile is a `.brf` cost-function script, not just a preset name. This makes BRouter especially well suited to uploaded user profiles, because the native format already expresses personal routing preferences.
 
-BRouter nutzt `profiles2` für Lookup-Tabelle und Routing-Profile. Zusätzlich beschreibt BRouter eine Mapping-Schicht zwischen Routing-Modi und Routing- Profilen. Im öffentlichen BRouter-Profilverzeichnis finden sich u.a.:
+BRouter uses `profiles2` for the lookup table and routing profiles. It also describes a mapping layer between routing modes and routing profiles. The public BRouter profile directory includes, among others:
 
-| BRouter-Profil | Wanderer-Kategorie | Hinweise |
+| BRouter profile | Wanderer category | Notes |
 | --- | --- | --- |
-| `trekking` | Bike / Touring | Balanciertes Fahrradprofil und häufiger Default für Alltags-/Touring-Routen. |
-| `trekking-noferries` | Bike / Touring | Trekking-Variante ohne Fähren. |
-| `trekking-nosteps` | Bike / Touring | Trekking-Variante ohne Stufen. |
-| `trekking-steep` | Bike / Touring | Trekking-Variante mit anderer Hügelbehandlung. |
-| `trekking-ignore-cr` | Bike / Touring | Trekking-Variante, die Cycle-Route-Präferenz ignoriert. |
-| `fastbike` | Bike / Road | Schnelleres Fahrradprofil mit stärkerer Road-Speed-Orientierung. |
-| `fastbike-lowtraffic` | Bike / Road | Schnelles Fahrradprofil mit stärkerer Low-Traffic-Präferenz. |
-| `fastbike-verylowtraffic` | Bike / Road | Schnelles Fahrradprofil mit noch stärkerer Traffic-Vermeidung. |
-| `gravel` | Bike / Gravel | Gravel-orientiertes Fahrradrouting. |
-| `mtb` | Bike / MTB | Mountainbike-orientiertes Routing. |
-| `shortest` | Foot / generisch | Kürzeste Route; als Baseline nützlich, aber nicht immer angenehm. |
-| `hiking-mountain` | Foot / Hiking | Mountain-Hiking-Profil. |
-| `moped` | Motor | Moped-/Scooter-ähnliches Routing. |
-| `car-eco`, `car-fast`, `car-vario` | Motor | Auto-Varianten im öffentlichen Profilverzeichnis. |
-| `skating` | Other | Skating-orientiertes Profil. |
-| `rail`, `river`, `all`, `dummy`, `softaccess` | Spezial / Diagnose | Für Sonderfälle, Tests oder nicht-standardmäßiges Routing. |
+| `trekking` | Bike / Touring | Balanced bicycle profile and a common default for everyday/touring routes. |
+| `trekking-noferries` | Bike / Touring | Trekking variant without ferries. |
+| `trekking-nosteps` | Bike / Touring | Trekking variant without steps. |
+| `trekking-steep` | Bike / Touring | Trekking variant with different hill handling. |
+| `trekking-ignore-cr` | Bike / Touring | Trekking variant that ignores cycle-route preference. |
+| `fastbike` | Bike / Road | Faster bicycle profile with stronger road-speed orientation. |
+| `fastbike-lowtraffic` | Bike / Road | Fast bicycle profile with stronger low-traffic preference. |
+| `fastbike-verylowtraffic` | Bike / Road | Fast bicycle profile with even stronger traffic avoidance. |
+| `gravel` | Bike / Gravel | Gravel-oriented bicycle routing. |
+| `mtb` | Bike / MTB | Mountain-bike-oriented routing. |
+| `shortest` | Foot / generic | Shortest route; useful as a baseline, but not always pleasant. |
+| `hiking-mountain` | Foot / Hiking | Mountain hiking profile. |
+| `moped` | Motor | Moped-/scooter-like routing. |
+| `car-eco`, `car-fast`, `car-vario` | Motor | Car variants in the public profile directory. |
+| `skating` | Other | Skating-oriented profile. |
+| `rail`, `river`, `all`, `dummy`, `softaccess` | Special / Diagnostic | For special cases, tests, or non-standard routing. |
 
-Das BRouter-Plugin sollte eingebaute Profile und hochgeladene `.brf`-Dateien im gleichen konzeptionellen Slot behandeln: beides sind provider-native Profile. Standardnutzer wählen Wanderer-Intents; Advanced-Nutzer können native BRouter-Profile direkt wählen oder eigene `.brf`-Dateien hochladen.
+The BRouter plugin should treat built-in profiles and uploaded `.brf` files in the same conceptual slot: both are provider-native profiles. Standard users pick Wanderer intents; advanced users can select native BRouter profiles directly or upload their own `.brf` files.
 
-### GraphHopper als Validierungsfall
+### GraphHopper as a validation case
 
-GraphHopper ist für die Konzeptvalidierung wertvoll, auch wenn Valhalla und BRouter der primäre Implementierungsfokus bleiben. GraphHopper ist eine offene OSM-Routing-Engine, kann als Java-Library oder Standalone-Server laufen und bringt vordefinierte Profile wie `car`, `bike`, `racingbike`, `mtb`, `foot`, `hike`, `truck`, `bus` und `motorcycle` mit. Außerdem unterstützt GraphHopper Custom Models, mit denen Profile ohne Java-Code pro Request angepasst werden können.
+GraphHopper is valuable for concept validation, even though Valhalla and BRouter remain the primary implementation focus. GraphHopper is an open OSM routing engine, can run as a Java library or a standalone server, and ships predefined profiles such as `car`, `bike`, `racingbike`, `mtb`, `foot`, `hike`, `truck`, `bus`, and `motorcycle`. GraphHopper also supports custom models that adjust profiles per request without Java code.
 
-Für Wanderer prüft GraphHopper drei wichtige Annahmen:
+For Wanderer, GraphHopper tests three important assumptions:
 
-- Kanonische Wanderer-Intents lassen sich nicht nur auf Valhalla-Costings und BRouter-`.brf`, sondern auch auf ein weiteres Profil-/Custom-Model-Konzept mappen.
-- Generische Preferences wie Road-/Surface-/Hill-Präferenz können als Custom-Model-Regeln oder Profil-Auswahl ausgedrückt werden, ohne dass Wanderer die GraphHopper-Sprache als globale Profilsprache übernimmt.
-- Alternative Routen und Elevation existieren auch außerhalb von Valhalla, sodass die Capabilities `route.v1` und `elevation.v1` nicht Valhalla-spezifisch modelliert werden dürfen.
+- Canonical Wanderer intents can be mapped not only onto Valhalla costings and BRouter `.brf`, but also onto yet another profile/custom-model concept.
+- Generic preferences such as road/surface/hill preference can be expressed as custom-model rules or profile selection, without Wanderer adopting the GraphHopper language as a global profile language.
+- Alternative routes and elevation also exist outside Valhalla, so the `route.v1` and `elevation.v1` capabilities must not be modeled in a Valhalla-specific way.
 
-GraphHopper soll deshalb in Beispielen und der Validierungsmatrix als Validierungsengine auftauchen. Ein First-Party-GraphHopper-Plugin ist für den Zielzustand möglich, aber nicht notwendig, um den initialen Implementierungsfokus auf Valhalla und BRouter zu halten. Die exakten GraphHopper-Custom-Model- Mappings sind keine Voraussetzung für die Routing-Plugin-Spezifikation; sie werden erst relevant, wenn ein konkretes GraphHopper-Plugin gebaut wird.
+GraphHopper should therefore appear in examples and in the validation matrix as a validation engine. A first-party GraphHopper plugin is possible for the target state but not necessary to keep the initial implementation focus on Valhalla and BRouter. The exact GraphHopper custom-model mappings are not a prerequisite for the routing plugin specification; they become relevant only when a concrete GraphHopper plugin is built.
 
-## Kanonische Wanderer-Intents
+## Canonical Wanderer intents
 
-Der Provider-Vergleich legt ein Schichtenmodell nahe:
+The provider comparison suggests a layered model:
 
-1. Generischer `mode` für UI-Gruppierung und Kompatibilitätsprüfungen.
-2. Kanonischer Wanderer-`intent` für Standardnutzer und Multi-Provider-Vergleich.
-3. Plugin-Mapping von Wanderer-Intent zu provider-nativem Profil oder Config.
-4. Optionales provider-natives Profil oder Config für Advanced-Nutzer.
+1. Generic `mode` for UI grouping and compatibility checks.
+2. Canonical Wanderer `intent` for standard users and multi-provider comparison.
+3. Plugin mapping from Wanderer intent to provider-native profile or config.
+4. Optional provider-native profile or config for advanced users.
 
-Wanderer-Intents sind die gemeinsame Routing-Sprache der Anwendung. Provider-native Profile sind Plugin-Dialekte. Mappings sind das Wörterbuch dazwischen. Für Multi-Provider-Routing ist das zentral: BRouter `trekking` und Valhalla `bicycle` sind nur dann vergleichbar, wenn Wanderer weiß, dass beide auf denselben kanonischen Intent wie `bike_balanced` gemappt sind.
+Wanderer intents are the application's shared routing language. Provider-native profiles are plugin dialects. Mappings are the dictionary between them. For multi-provider routing this is central: BRouter `trekking` and Valhalla `bicycle` are comparable only if Wanderer knows that both map onto the same canonical intent such as `bike_balanced`.
 
-Vorgeschlagene generische Modes:
+Suggested generic modes:
 
-| Mode | Bedeutung |
+| Mode | Meaning |
 | --- | --- |
-| `foot` | Walking, Hiking, Running und Fußgängerzugang. |
-| `bike` | Fahrrad-Routing jeder Art. |
-| `motor` | Auto, Motorrad, Scooter, Truck und ähnliche Straßenfahrzeuge. |
-| `mixed` | Route wechselt bewusst zwischen Modi. |
-| `transit` | Public-Transport-aware Routing. |
-| `other` | Spezialprofile wie Skating, Rail, River oder Diagnostik. |
+| `foot` | Walking, hiking, running, and pedestrian access. |
+| `bike` | Bicycle routing of any kind. |
+| `motor` | Car, motorcycle, scooter, truck, and similar road vehicles. |
+| `mixed` | Route deliberately switches between modes. |
+| `transit` | Public-transport-aware routing. |
+| `other` | Special profiles such as skating, rail, river, or diagnostics. |
 
-Vorgeschlagene Standard-Intents:
+Suggested standard intents:
 
-| Intent | Mode | Label für Standardnutzer | Typisches Provider-Mapping |
+| Intent | Mode | Standard-user label | Typical provider mapping |
 | --- | --- | --- | --- |
-| `walk` | `foot` | Walking | Valhalla `pedestrian`; BRouter `shortest` oder ein Walking-Profil, falls installiert. |
-| `run` | `foot` | Laufen | Valhalla `pedestrian` mit höherer Geschwindigkeit und eher direktem Profil; BRouter Walking-/Hiking-Profil oder Custom-`.brf`; GraphHopper `foot` mit passendem Custom Model. |
-| `hike` | `foot` | Wandern | Valhalla `pedestrian` Hiking-Preset; BRouter `hiking-mountain`. |
-| `mountain_hike` | `foot` | Bergwandern | Valhalla `pedestrian` mit hoher Pfad-/Hügeltoleranz; BRouter `hiking-mountain` mit `SAC_scale_limit`/`SAC_scale_preferred`; GraphHopper `hike`. |
-| `bike_balanced` | `bike` | Tourenrad | Valhalla `bicycle` Hybrid-Preset; BRouter `trekking`. |
-| `bike_fast` | `bike` | Schnelles Rad | Valhalla `bicycle` Road-Preset; BRouter `fastbike`. |
-| `bike_low_traffic` | `bike` | Ruhige Radroute | Valhalla `bicycle` mit Low-Road-Präferenz, soweit möglich; BRouter `fastbike-lowtraffic` oder `fastbike-verylowtraffic`. |
-| `gravel` | `bike` | Gravel | Valhalla `bicycle` Cross-/Mountain-ähnliches Preset; BRouter `gravel`. |
-| `mtb` | `bike` | Mountainbike | Valhalla `bicycle` Mountain-Preset; BRouter `mtb`. |
-| `car` | `motor` | Auto | Valhalla `auto`; BRouter `car-fast` oder `car-vario`. |
-| `scooter` | `motor` | Scooter / Moped | Valhalla `motor_scooter`; BRouter `moped`. |
-| `motorcycle` | `motor` | Motorrad | Valhalla `motorcycle`; BRouter Custom-/Native-Profil, falls vorhanden. |
+| `walk` | `foot` | Walking | Valhalla `pedestrian`; BRouter `shortest` or a walking profile if installed. |
+| `run` | `foot` | Running | Valhalla `pedestrian` with higher speed and a more direct profile; BRouter walking/hiking profile or custom `.brf`; GraphHopper `foot` with a matching custom model. |
+| `hike` | `foot` | Hiking | Valhalla `pedestrian` hiking preset; BRouter `hiking-mountain`. |
+| `mountain_hike` | `foot` | Mountain hiking | Valhalla `pedestrian` with high path/hill tolerance; BRouter `hiking-mountain` with `SAC_scale_limit`/`SAC_scale_preferred`; GraphHopper `hike`. |
+| `bike_balanced` | `bike` | Touring bike | Valhalla `bicycle` hybrid preset; BRouter `trekking`. |
+| `bike_fast` | `bike` | Fast bike | Valhalla `bicycle` road preset; BRouter `fastbike`. |
+| `bike_low_traffic` | `bike` | Quiet bike route | Valhalla `bicycle` with low-road preference where possible; BRouter `fastbike-lowtraffic` or `fastbike-verylowtraffic`. |
+| `gravel` | `bike` | Gravel | Valhalla `bicycle` cross-/mountain-like preset; BRouter `gravel`. |
+| `mtb` | `bike` | Mountain bike | Valhalla `bicycle` mountain preset; BRouter `mtb`. |
+| `car` | `motor` | Car | Valhalla `auto`; BRouter `car-fast` or `car-vario`. |
+| `scooter` | `motor` | Scooter / moped | Valhalla `motor_scooter`; BRouter `moped`. |
+| `motorcycle` | `motor` | Motorcycle | Valhalla `motorcycle`; BRouter custom/native profile if available. |
 
-`run` überschneidet sich bewusst mit `walk` plus höherem `speedKmh`. Der eigene Intent ist als UI-Shortcut und semantische Nutzerabsicht gedacht: Laufen kann direktere Wege, andere Komfortannahmen und andere Default-Geschwindigkeiten bekommen, ohne dass Standardnutzer ein Walking-Profil manuell tunen müssen.
+`run` deliberately overlaps with `walk` plus a higher `speedKmh`. The dedicated intent is meant as a UI shortcut and a semantic user intent: running can get more direct paths, different comfort assumptions, and different default speeds without standard users having to tune a walking profile manually.
 
-### Kanonische Routing-Präferenzen
+### Canonical routing preferences
 
-Neben dem Intent braucht Wanderer weiterhin einfache Tuning-Optionen im Routenplaner. Diese Optionen sollten nicht provider-spezifisch sein, sondern als kleine, mode-spezifische `preferences` am Request hängen. Sie verändern den ausgewählten Intent, ersetzen ihn aber nicht.
+Beyond the intent, Wanderer still needs simple tuning options in the route planner. These options should not be provider-specific, but should hang off the request as small, mode-specific `preferences`. They modify the selected intent but do not replace it.
 
-Beispiel: `bike_balanced` beschreibt die grundlegende Absicht "Tourenrad". Die Preference `hillPreference: 0.2` sagt nur, dass dieser Tourenrad-Intent Hügel eher meiden soll. Ein anderer Provider darf daraus andere native Kostenfaktoren ableiten, solange die grobe Nutzerabsicht erhalten bleibt.
+Example: `bike_balanced` describes the basic intent "touring bike". The preference `hillPreference: 0.2` only says that this touring-bike intent should rather avoid hills. Another provider may derive different native cost factors from it, as long as the rough user intent is preserved.
 
-Für Standardnutzer sollten nur Preferences sichtbar sein, die für den gewählten Mode und die aktive Engine sinnvoll unterstützt werden. Bei Parallel-Routing ist eine Preference nur dann vergleichbar, wenn alle ausgewählten Engines dafür ein Mapping deklarieren. Andernfalls kann der Host die Option ausblenden, als nur teilweise unterstützt markieren oder in den provider-spezifischen Advanced-Bereich verschieben.
+For standard users, only preferences that are meaningfully supported for the selected mode and the active engine should be visible. In parallel routing, a preference is comparable only if all selected engines declare a mapping for it. Otherwise the host can hide the option, mark it as only partially supported, or move it into the provider-specific advanced area.
 
-Die heutigen Editor-Slider sind damit keine Valhalla-Sonderfälle mehr, sondern werden größtenteils als kanonische Wanderer-Preferences modelliert. Sie bleiben im Standard-Editor sichtbar, wenn der Host sie für die aktive Engine oder die aktive Engine-Kombination als ausreichend unterstützt auflösen kann. Provider- spezifische Advanced Controls bleiben nur für Optionen übrig, die keine vergleichbare Wanderer-Semantik haben oder bewusst direkt in native Config schreiben.
+Today's editor sliders are therefore no longer Valhalla special cases, but are mostly modeled as canonical Wanderer preferences. They stay visible in the standard editor when the host can resolve them as sufficiently supported for the active engine or the active engine combination. Provider-specific advanced controls remain only for options that have no comparable Wanderer semantics or that deliberately write directly into native config.
 
-Generische Preferences sollten bewusst klein bleiben:
+Generic preferences should deliberately stay small:
 
-| Preference | Typ | Modes | Bedeutung |
+| Preference | Type | Modes | Meaning |
 | --- | --- | --- | --- |
-| `shortest` | boolean | alle | Kürzere Strecke stärker gewichten als Komfort, Geschwindigkeit oder Qualität. |
-| `speedKmh` | number | `foot`, `bike` | Angenommene Bewegungs-/Reisegeschwindigkeit für Dauer und Kostenmodell. |
-| `hillPreference` | number `0..1` | `foot`, `bike` | `0` meidet Steigungen stark, `0.5` ist neutral, `1` akzeptiert oder bevorzugt hügelige Wege stärker. |
-| `maxHikingDifficulty` | enum oder number | `foot` | Maximale akzeptierte Wander-/SAC-Schwierigkeit. |
-| `bicycleType` | enum | `bike` | Fahrradtyp, z.B. `road`, `hybrid`, `city`, `cross`, `mountain`. |
-| `roadPreference` | number `0..1` | `bike` | `0` meidet Straßen stärker, `1` nutzt Straßen stärker. |
-| `avoidBadSurfaces` | number `0..1` | `bike` | Höhere Werte meiden schlechte oder unbekannte Oberflächen stärker. |
-| `fixedSpeedKmh` | number | `motor` | Feste Geschwindigkeit für Zeit-/Kostenmodell, unabhängig von Straßentypen. |
-| `topSpeedKmh` | number | `motor` | Maximale Fahrzeuggeschwindigkeit. |
-| `vehicleWidthM` | number | `motor` | Fahrzeugbreite für Routing mit Breitenbeschränkungen. |
-| `vehicleHeightM` | number | `motor` | Fahrzeughöhe für Routing mit Höhenbeschränkungen. |
+| `shortest` | boolean | all | Weight a shorter distance more heavily than comfort, speed, or quality. |
+| `speedKmh` | number | `foot`, `bike` | Assumed travel/movement speed for duration and cost model. |
+| `hillPreference` | number `0..1` | `foot`, `bike` | `0` strongly avoids climbs, `0.5` is neutral, `1` accepts or prefers hilly ways more. |
+| `maxHikingDifficulty` | enum or number | `foot` | Maximum accepted hiking/SAC difficulty. |
+| `bicycleType` | enum | `bike` | Bicycle type, e.g. `road`, `hybrid`, `city`, `cross`, `mountain`. |
+| `roadPreference` | number `0..1` | `bike` | `0` avoids roads more, `1` uses roads more. |
+| `avoidBadSurfaces` | number `0..1` | `bike` | Higher values avoid bad or unknown surfaces more strongly. |
+| `fixedSpeedKmh` | number | `motor` | Fixed speed for the time/cost model, independent of road types. |
+| `topSpeedKmh` | number | `motor` | Maximum vehicle speed. |
+| `vehicleWidthM` | number | `motor` | Vehicle width for routing with width restrictions. |
+| `vehicleHeightM` | number | `motor` | Vehicle height for routing with height restrictions. |
 
-Diese Liste deckt die aktuellen Editor-Optionen ab:
+This list covers the current editor options:
 
-| Aktueller Mode | Aktuelle Option | Kanonische Preference |
+| Current mode | Current option | Canonical preference |
 | --- | --- | --- |
-| Auto | fixe Geschwindigkeit | `fixedSpeedKmh` |
-| Auto | Höchstgeschwindigkeit | `topSpeedKmh` |
-| Auto | Autobreite | `vehicleWidthM` |
-| Auto | Autohöhe | `vehicleHeightM` |
-| Wandern | Laufgeschwindigkeit | `speedKmh` |
-| Wandern | Hügel einbeziehen | `hillPreference` |
-| Wandern | maximale Schwierigkeit der Wanderung | `maxHikingDifficulty` |
-| Radfahren | Fahrradtyp | `bicycleType` |
-| Radfahren | Radfahrgeschwindigkeit | `speedKmh` |
-| Radfahren | Hügel einbeziehen | `hillPreference` |
-| Radfahren | Nutze Straßen | `roadPreference` |
-| Radfahren | Vermeide schlechte Oberflächen | `avoidBadSurfaces` |
-| alle Auto-Routing-Modes | shortest | `shortest` |
+| Car | fixed speed | `fixedSpeedKmh` |
+| Car | top speed | `topSpeedKmh` |
+| Car | vehicle width | `vehicleWidthM` |
+| Car | vehicle height | `vehicleHeightM` |
+| Hiking | walking speed | `speedKmh` |
+| Hiking | include hills | `hillPreference` |
+| Hiking | maximum hiking difficulty | `maxHikingDifficulty` |
+| Cycling | bicycle type | `bicycleType` |
+| Cycling | cycling speed | `speedKmh` |
+| Cycling | include hills | `hillPreference` |
+| Cycling | use roads | `roadPreference` |
+| Cycling | avoid bad surfaces | `avoidBadSurfaces` |
+| all car routing modes | shortest | `shortest` |
 
-Vorgeschlagene Provider-Mappings:
+Suggested provider mappings:
 
 | Preference | Valhalla | BRouter | GraphHopper |
 | --- | --- | --- | --- |
-| `shortest` | `shortest` in `costing_options`. | Eigenes Profil oder `.brf`-Template mit stärkerer Distanzgewichtung; ggf. natives `shortest` für Foot. | Kürzere Route über Custom Model / Gewichtung oder alternatives Profil, wenn unterstützt. |
-| `speedKmh` | `walking_speed` für `pedestrian`, `cycling_speed` für `bicycle`. | Dynamisches `.brf` aus Template; je nach Profil über Variablen wie `maxSpeed`, `bikerPower`, `totalMass` oder eigene Zeitkosten. | Custom Model kann Geschwindigkeiten beeinflussen; einfache Dauerannahmen ggf. host-seitig oder provider-spezifisch. |
-| `hillPreference` | `use_hills` für `pedestrian` und `bicycle`. | `.brf`-Template über `consider_elevation`, `uphillcost`, `downhillcost` und Cutoff-Werte. | Custom Model mit Elevation-/Steigungsdaten, sofern Profil/Server diese Encoded Values bereitstellt. |
-| `maxHikingDifficulty` | `max_hiking_difficulty` im `pedestrian`-Costing. | `.brf`-Template über `SAC_scale_limit` und `SAC_scale_preferred`. | `hike`-Profil oder Custom Model, sofern SAC-/Trail-Schwierigkeitsdaten verfügbar sind. |
-| `bicycleType` | `bicycle_type`: `Road`, `Hybrid`, `City`, `Cross`, `Mountain`. | Auswahl eines nativen Profils wie `fastbike`, `trekking`, `gravel`, `mtb` oder passendes `.brf`-Template. | Profilauswahl wie `bike`, `racingbike`, `mtb` plus Custom Model. |
-| `roadPreference` | `use_roads` im `bicycle`-Costing. | `.brf`-Template mit angepassten Kosten für Straßenklassen, Cycleways, Tracks und Traffic-Variablen. | Custom Model über Road-Class-/Road-Environment-Regeln. |
-| `avoidBadSurfaces` | `avoid_bad_surfaces` im `bicycle`-Costing. | `.brf`-Template mit Surface-/Smoothness-Kosten. | Custom Model über `surface`, `smoothness` oder vergleichbare Encoded Values. |
-| `fixedSpeedKmh` | `fixed_speed` im `auto`-Costing. | Möglich über Auto-`.brf`-Template und eigene Zeit-/Kostenberechnung; nicht als universelles Built-in garantiert. | Custom Model oder provider-spezifisches Profil, abhängig vom Serverprofil. |
-| `topSpeedKmh` | `top_speed` im `auto`-Costing. | Auto-Profile wie `car-vario` können Geschwindigkeit über Variablen wie `vmax` abbilden. | Custom Model kann Geschwindigkeit begrenzen, wenn das Profil dies zulässt. |
-| `vehicleWidthM` | `width` im `auto`-/fahrzeugbezogenen Costing. | Nur möglich, wenn Daten und `.brf`-Profil Breitenbeschränkungen explizit auswerten; kein garantierter Standard. | Eher Truck-/Vehicle-Profil oder Custom Model, abhängig von aktivierten Encoded Values. |
-| `vehicleHeightM` | `height` im `auto`-/fahrzeugbezogenen Costing. | Nur möglich, wenn Daten und `.brf`-Profil Höhenbeschränkungen explizit auswerten; kein garantierter Standard. | Eher Truck-/Vehicle-Profil oder Custom Model, abhängig von aktivierten Encoded Values. |
+| `shortest` | `shortest` in `costing_options`. | Own profile or `.brf` template with stronger distance weighting; possibly native `shortest` for foot. | Shorter route via custom model / weighting or an alternative profile, if supported. |
+| `speedKmh` | `walking_speed` for `pedestrian`, `cycling_speed` for `bicycle`. | Dynamic `.brf` from a template; depending on the profile via variables such as `maxSpeed`, `bikerPower`, `totalMass`, or custom time costs. | Custom model can influence speeds; simple duration assumptions possibly host-side or provider-specific. |
+| `hillPreference` | `use_hills` for `pedestrian` and `bicycle`. | `.brf` template via `consider_elevation`, `uphillcost`, `downhillcost`, and cutoff values. | Custom model with elevation/grade data, provided the profile/server exposes those encoded values. |
+| `maxHikingDifficulty` | `max_hiking_difficulty` in the `pedestrian` costing. | `.brf` template via `SAC_scale_limit` and `SAC_scale_preferred`. | `hike` profile or custom model, provided SAC-/trail-difficulty data is available. |
+| `bicycleType` | `bicycle_type`: `Road`, `Hybrid`, `City`, `Cross`, `Mountain`. | Selection of a native profile such as `fastbike`, `trekking`, `gravel`, `mtb`, or a matching `.brf` template. | Profile selection such as `bike`, `racingbike`, `mtb` plus custom model. |
+| `roadPreference` | `use_roads` in the `bicycle` costing. | `.brf` template with adjusted costs for road classes, cycleways, tracks, and traffic variables. | Custom model via road-class/road-environment rules. |
+| `avoidBadSurfaces` | `avoid_bad_surfaces` in the `bicycle` costing. | `.brf` template with surface/smoothness costs. | Custom model via `surface`, `smoothness`, or comparable encoded values. |
+| `fixedSpeedKmh` | `fixed_speed` in the `auto` costing. | Possible via a car `.brf` template and custom time/cost computation; not guaranteed as a universal built-in. | Custom model or provider-specific profile, depending on the server profile. |
+| `topSpeedKmh` | `top_speed` in the `auto` costing. | Car profiles such as `car-vario` can express speed via variables such as `vmax`. | Custom model can cap speed if the profile allows it. |
+| `vehicleWidthM` | `width` in the `auto`/vehicle-related costing. | Only possible if data and the `.brf` profile explicitly evaluate width restrictions; no guaranteed standard. | Rather a truck/vehicle profile or custom model, depending on enabled encoded values. |
+| `vehicleHeightM` | `height` in the `auto`/vehicle-related costing. | Only possible if data and the `.brf` profile explicitly evaluate height restrictions; no guaranteed standard. | Rather a truck/vehicle profile or custom model, depending on enabled encoded values. |
 
-BRouter ist dabei der wichtigste Sonderfall: Viele Preferences sind nicht Parameter eines stabilen HTTP-Formats, sondern Teil der `.brf`-Cost-Function. Das BRouter-Plugin kann deshalb zwei Wege anbieten:
+BRouter is the most important special case here: many preferences are not parameters of a stable HTTP format, but part of the `.brf` cost function. The BRouter plugin can therefore offer two paths:
 
-- feste native Profile wie `trekking`, `fastbike`, `gravel`, `mtb`, `hiking-mountain`, `car-fast` oder `car-vario`;
-- generierte User-Profile aus sicheren `.brf`-Templates, bei denen Wanderer- Preferences in begrenzte Platzhalter eingesetzt werden.
+- fixed native profiles such as `trekking`, `fastbike`, `gravel`, `mtb`, `hiking-mountain`, `car-fast`, or `car-vario`;
+- generated user profiles from safe `.brf` templates, where Wanderer preferences are inserted into bounded placeholders.
 
-Template-basierte `.brf`-Generierung ist provider-spezifisch und bleibt im BRouter-Plugin. Der Host speichert nur das resultierende native Profil oder die Template-Parameter, validiert Größe und Herkunft und gibt sie begrenzt an das Plugin weiter. Wanderer selbst wird dadurch nicht zur BRouter-Profilengine.
+Template-based `.brf` generation is provider-specific and stays in the BRouter plugin. The host only stores the resulting native profile or the template parameters, validates size and origin, and passes them to the plugin in a bounded way. Wanderer itself does not become a BRouter profile engine.
 
-Diese Taxonomie ist autoritativ für Vergleichbarkeit, aber erweiterbar. Wanderer sollte eine kleine Default-Liste für normale Nutzer mitbringen. Admins können instanzweite Intents wie `bike_commute` oder `trail_run` ergänzen. Nutzer können persönliche Varianten oder Aliase anlegen, dürfen aber die globale Bedeutung eines Admin-Intents nicht still überschreiben.
+This taxonomy is authoritative for comparability, but extensible. Wanderer should ship a small default list for regular users. Admins can add instance-wide intents such as `bike_commute` or `trail_run`. Users can create personal variants or aliases, but must not silently override the global meaning of an admin intent.
 
-Ein Custom-Intent ohne Mapping auf zwei oder mehr ausgewählte Engines ist für Single-Engine-Routing gültig, aber nicht providerübergreifend vergleichbar. Parallelvergleich ist nur für Engines definiert, die auf denselben kanonischen Intent-Key gemappt sind.
+A custom intent without a mapping to two or more selected engines is valid for single-engine routing but not cross-provider comparable. Parallel comparison is defined only for engines mapped onto the same canonical intent key.
 
-Plugins deklarieren, welche Modes und Intents sie bedienen können, und liefern Mapping-Vorschläge von generischen Intents zu nativen Profilen. Der Host kann damit eine einfache Standard-UI zeigen und Advanced-Nutzern trotzdem native Provider-Profile direkt zugänglich machen.
+Plugins declare which modes and intents they can serve and provide mapping suggestions from generic intents to native profiles. The host can thus show a simple standard UI and still give advanced users direct access to native provider profiles.
 
-### Ownership und Mappings
+### Ownership and mappings
 
-Empfohlenes Ownership-Modell:
+Recommended ownership model:
 
-| Ebene | Owner | Zweck |
+| Layer | Owner | Purpose |
 | --- | --- | --- |
-| Eingebaute Wanderer-Intents | Wanderer | Stabile Defaults wie `hike`, `bike_balanced`, `gravel` und `car`. |
-| Custom Global Intents | Admin | Instanzweite Ergänzungen mit geteilter Semantik, z.B. `bike_commute`. |
-| Persönliche Intents oder Aliase | User | User-spezifische Varianten, die Mappings für diesen User überschreiben können. |
-| Native Plugin-Profile | Plugin / Provider | Provider-Built-ins wie BRouter `trekking` oder Valhalla `pedestrian`. |
-| Hochgeladene native Profile | User | Provider-native Custom-Dateien wie eine BRouter-`.brf`. |
-| Profil-Mappings | Admin und User | Übersetzen Wanderer-Intents in native Plugin-Profile oder Config. |
+| Built-in Wanderer intents | Wanderer | Stable defaults such as `hike`, `bike_balanced`, `gravel`, and `car`. |
+| Custom global intents | Admin | Instance-wide additions with shared semantics, e.g. `bike_commute`. |
+| Personal intents or aliases | User | User-specific variants that can override mappings for that user. |
+| Native plugin profiles | Plugin / Provider | Provider built-ins such as BRouter `trekking` or Valhalla `pedestrian`. |
+| Uploaded native profiles | User | Provider-native custom files such as a BRouter `.brf`. |
+| Profile mappings | Admin and User | Translate Wanderer intents into native plugin profiles or config. |
 
-Plugin-deklarierte Profile sind nützlich für Discovery und Mapping-Vorschläge, sollten aber nicht die primäre Vergleichsebene sein. Wenn Plugins nur eigene Profile melden, müsste Wanderer raten, ob Namen wie `trekking`, `hybrid`, `touring`, `bike`, `road_bike` und `fastbike-lowtraffic` äquivalent sind. Diese Raterei wird instabil, sobald mehrere Provider parallel angefragt werden.
+Plugin-declared profiles are useful for discovery and mapping suggestions, but should not be the primary comparison layer. If plugins only report their own profiles, Wanderer would have to guess whether names such as `trekking`, `hybrid`, `touring`, `bike`, `road_bike`, and `fastbike-lowtraffic` are equivalent. That guessing becomes unstable as soon as multiple providers are requested in parallel.
 
-Der Host löst Routing-Anfragen in dieser Reihenfolge auf:
+The host resolves routing requests in this order:
 
-1. User-selected Wanderer-Intent, z.B. `bike_balanced`.
-2. User-spezifisches Mapping für das ausgewählte Plugin, falls vorhanden.
-3. Admin-Mapping für das ausgewählte Plugin, falls vorhanden.
-4. Plugin-vorgeschlagenes Default-Mapping aus Manifest-Metadata.
-5. Strukturierter Fehler, wenn kein Mapping existiert.
+1. User-selected Wanderer intent, e.g. `bike_balanced`.
+2. User-specific mapping for the selected plugin, if present.
+3. Admin mapping for the selected plugin, if present.
+4. Plugin-suggested default mapping from manifest metadata.
+5. Structured error if no mapping exists.
 
-Beispiele:
+Examples:
 
-| Wanderer-Intent | BRouter-Mapping | Valhalla-Mapping |
+| Wanderer intent | BRouter mapping | Valhalla mapping |
 | --- | --- | --- |
-| `bike_balanced` | Native profile `trekking` | `costing: "bicycle"` mit Hybrid-/Touring-Optionen. |
-| `bike_commute` | User-uploaded `commute.brf` oder native `fastbike-lowtraffic` | `costing: "bicycle"` mit Low-Road- und Avoid-Highway-Präferenzen. |
-| `hike` | Native profile `hiking-mountain` | `costing: "pedestrian"` mit Hiking-Preset. |
-| `car` | Native profile `car-fast` oder `car-vario` | `costing: "auto"`. |
+| `bike_balanced` | Native profile `trekking` | `costing: "bicycle"` with hybrid/touring options. |
+| `bike_commute` | User-uploaded `commute.brf` or native `fastbike-lowtraffic` | `costing: "bicycle"` with low-road and avoid-highway preferences. |
+| `hike` | Native profile `hiking-mountain` | `costing: "pedestrian"` with hiking preset. |
+| `car` | Native profile `car-fast` or `car-vario` | `costing: "auto"`. |
 
-Die Standard-UI sollte einfach bleiben: Intent wählen und routen. Advanced- Einstellungen können das aufgelöste native Mapping anzeigen und Admins oder Usern erlauben, es zu überschreiben.
+The standard UI should stay simple: pick an intent and route. Advanced settings can show the resolved native mapping and let admins or users override it.
 
-### Discovery-Vertrag
+### Discovery contract
 
-Routing-Plugins deklarieren ihre Routing-Fähigkeiten über `metadata.routing`. Diese Discovery-Daten sind der maschinenlesbare Vertrag, mit dem der Host Mappings vorschlagen, Preferences prüfen und die UI auf unterstützte Controls begrenzen kann.
+Routing plugins declare their routing capabilities via `metadata.routing`. This discovery data is the machine-readable contract the host uses to suggest mappings, check preferences, and limit the UI to supported controls.
 
-Vorgeschlagene Metadata-Struktur:
+Suggested metadata structure:
 
 ```json
 {
@@ -671,60 +671,60 @@ Vorgeschlagene Metadata-Struktur:
 }
 ```
 
-Feldsemantik:
+Field semantics:
 
-| Feld | Bedeutung |
+| Field | Meaning |
 | --- | --- |
-| `version` | Version des Discovery-Vertrags, zunächst `v1`. |
-| `roles` | Rollen des Plugins: `route`, `elevation` oder beide. |
-| `modes` | Grobe Wanderer-Modes, die das Plugin bedienen kann. |
-| `supportsSegmentGeometry` | Plugin kann pro Anchor-Paar eigene Segment-Geometrien liefern. |
-| `supportsShapeRanges` | Plugin kann Full-Shape plus Segment-Indexbereiche liefern. |
-| `supportsAlternatives` | Plugin kann mehrere native Routenkandidaten liefern. |
-| `maxAlternatives` | Obergrenze sinnvoller nativer Alternativen pro Plugin-Invocation. |
-| `supportsRouteElevation` | `route.v1` kann bereits brauchbare Höhen enthalten. |
-| `supportsElevation` | Plugin implementiert separate `elevation.v1`-Capability. |
-| `intents` | Plugin-vorgeschlagene Mappings von Wanderer-Intents auf native Profile und Preferences. |
-| `nativeProfiles` | Provider-native Profile, die der Host listen und Advanced-Nutzern anbieten kann. |
-| `nativeProfileUpload` | Upload-Vertrag für provider-native Profil-Dateien. |
+| `version` | Version of the discovery contract, initially `v1`. |
+| `roles` | Roles of the plugin: `route`, `elevation`, or both. |
+| `modes` | Coarse Wanderer modes the plugin can serve. |
+| `supportsSegmentGeometry` | Plugin can return its own segment geometries per anchor pair. |
+| `supportsShapeRanges` | Plugin can return a full shape plus segment index ranges. |
+| `supportsAlternatives` | Plugin can return multiple native route candidates. |
+| `maxAlternatives` | Upper bound on reasonable native alternatives per plugin invocation. |
+| `supportsRouteElevation` | `route.v1` may already contain usable heights. |
+| `supportsElevation` | Plugin implements a separate `elevation.v1` capability. |
+| `intents` | Plugin-suggested mappings from Wanderer intents to native profiles and preferences. |
+| `nativeProfiles` | Provider-native profiles the host can list and offer to advanced users. |
+| `nativeProfileUpload` | Upload contract for provider-native profile files. |
 
-`preferences` beschreibt pro Intent, welche kanonischen Wanderer-Preferences das Plugin sinnvoll verarbeiten kann. Der Host nutzt diese Daten, um UI-Regler anzuzeigen, Parallelvergleich zu prüfen und `unsupported_preference` korrekt als Warning oder Fehler einzuordnen.
+`preferences` describes, per intent, which canonical Wanderer preferences the plugin can meaningfully process. The host uses this data to show UI sliders, check parallel comparison, and classify `unsupported_preference` correctly as a warning or an error.
 
-Support-Werte:
+Support values:
 
-| Wert | Bedeutung |
+| Value | Meaning |
 | --- | --- |
-| `full` | Preference wird direkt und verlässlich in native Provider-Optionen gemappt. |
-| `partial` | Preference hat eine grobe oder eingeschränkte Entsprechung. |
-| `template` | Preference ist über ein provider-spezifisches Template abbildbar, z.B. BRouter-`.brf`. |
-| `advanced` | Preference ist nur über native Advanced-Konfiguration verfügbar. |
-| `unsupported` | Preference wird für diesen Intent nicht unterstützt. |
+| `full` | Preference maps directly and reliably onto native provider options. |
+| `partial` | Preference has a rough or limited equivalent. |
+| `template` | Preference can be expressed via a provider-specific template, e.g. BRouter `.brf`. |
+| `advanced` | Preference is only available via native advanced configuration. |
+| `unsupported` | Preference is not supported for this intent. |
 
-`requiredPreferences` sollte selten verwendet werden. Es markiert Preferences, die für ein Mapping nicht ignoriert werden dürfen. Wenn eine solche Preference nicht angewendet werden kann, wird `unsupported_preference` engine-fatal.
+`requiredPreferences` should be used rarely. It marks preferences that must not be ignored for a mapping. If such a preference cannot be applied, `unsupported_preference` becomes engine-fatal.
 
-Für Valhalla wäre `nativeProfileUpload.enabled` `false`; Advanced-Nutzer würden provider-spezifische Profil-/Config-Felder bearbeiten. Für BRouter ist Upload ein Kernfeature.
+For Valhalla, `nativeProfileUpload.enabled` would be `false`; advanced users would edit provider-specific profile/config fields. For BRouter, upload is a core feature.
 
-## Host-API
+## Host API
 
-Das Frontend ruft ausschließlich plugin-neutrale Endpunkte auf:
+The frontend calls exclusively plugin-neutral endpoints:
 
-| Endpoint | Zweck |
+| Endpoint | Purpose |
 | --- | --- |
-| `GET /api/v1/plugins/routing/engines` | Aktivierte Routing-Plugin-Instanzen und deren Capabilities für den User auflisten. |
-| `POST /api/v1/plugins/routing/route` | Routenkandidaten von einer oder mehreren Routing-Engines anfragen. |
-| `POST /api/v1/plugins/routing/elevation` | Höheninformationen über ein ausgewähltes Elevation-Plugin korrigieren oder ergänzen. |
-| `GET /api/v1/plugins/routing/profiles` | User-Profile und eingebaute Plugin-Profile auflisten. |
-| `POST /api/v1/plugins/routing/profiles` | User-Routing-Profil erstellen oder hochladen. |
-| `PATCH /api/v1/plugins/routing/profiles/{id}` | User-Profil umbenennen, ersetzen oder deaktivieren. |
-| `DELETE /api/v1/plugins/routing/profiles/{id}` | User-Profil löschen. |
-| `GET /api/v1/plugins/routing/intents` | Eingebaute, admin-definierte und user-definierte Wanderer-Intents auflisten. |
-| `POST /api/v1/plugins/routing/intents` | Admin- oder User-Intent erstellen. |
-| `GET/PATCH /api/v1/plugins/routing/mappings` | Intent-zu-Plugin-Mappings lesen oder aktualisieren. |
-| `GET/PATCH /api/v1/plugins/routing/settings` | User-Routing-Defaults lesen oder aktualisieren. |
+| `GET /api/v1/plugins/routing/engines` | List enabled routing plugin instances and their capabilities for the user. |
+| `POST /api/v1/plugins/routing/route` | Request route candidates from one or more routing engines. |
+| `POST /api/v1/plugins/routing/elevation` | Correct or add elevation via a selected elevation plugin. |
+| `GET /api/v1/plugins/routing/profiles` | List user profiles and built-in plugin profiles. |
+| `POST /api/v1/plugins/routing/profiles` | Create or upload a user routing profile. |
+| `PATCH /api/v1/plugins/routing/profiles/{id}` | Rename, replace, or disable a user profile. |
+| `DELETE /api/v1/plugins/routing/profiles/{id}` | Delete a user profile. |
+| `GET /api/v1/plugins/routing/intents` | List built-in, admin-defined, and user-defined Wanderer intents. |
+| `POST /api/v1/plugins/routing/intents` | Create an admin or user intent. |
+| `GET/PATCH /api/v1/plugins/routing/mappings` | Read or update intent-to-plugin mappings. |
+| `GET/PATCH /api/v1/plugins/routing/settings` | Read or update user routing defaults. |
 
-### Discovery, Settings und Controls
+### Discovery, settings, and controls
 
-`GET /api/v1/plugins/routing/engines` liefert Raw Discovery für aktivierte Routing-Plugin-Instanzen. Diese Daten sind für Admin-/Advanced-UI, Debugging und Mapping-Konfiguration gedacht; das Frontend muss daraus keine effektiven Standard-Controls berechnen.
+`GET /api/v1/plugins/routing/engines` returns raw discovery for enabled routing plugin instances. This data is intended for admin/advanced UI, debugging, and mapping configuration; the frontend does not need to compute effective standard controls from it.
 
 ```json
 {
@@ -755,7 +755,7 @@ Das Frontend ruft ausschließlich plugin-neutrale Endpunkte auf:
 }
 ```
 
-`GET /api/v1/plugins/routing/settings` und `PATCH /api/v1/plugins/routing/settings` lesen oder ändern User-Defaults:
+`GET /api/v1/plugins/routing/settings` and `PATCH /api/v1/plugins/routing/settings` read or change user defaults:
 
 ```json
 {
@@ -770,7 +770,7 @@ Das Frontend ruft ausschließlich plugin-neutrale Endpunkte auf:
 }
 ```
 
-Effektive Editor-Controls werden über einen eigenen Resolver aufgelöst:
+Effective editor controls are resolved via a dedicated resolver:
 
 ```text
 POST /api/v1/plugins/routing/effective-controls
@@ -829,9 +829,9 @@ Response:
 }
 ```
 
-Der Host berechnet die Schnittmenge und Vergleichbarkeit der Preferences. `comparable: true` gilt nur, wenn alle ausgewählten Engines die Preference mindestens `partial` unterstützen. `advanced` und `unsupported` erscheinen nicht in den Standard-Controls. Das Frontend rendert nur die Controls, die der Host zurückgibt.
+The host computes the intersection and comparability of the preferences. `comparable: true` holds only if all selected engines support the preference at least `partial`. `advanced` and `unsupported` do not appear in the standard controls. The frontend renders only the controls the host returns.
 
-`GET /api/v1/plugins/routing/profiles` gibt Discovery-Built-ins und gespeicherte User-/Generated-Profile gemeinsam zurück:
+`GET /api/v1/plugins/routing/profiles` returns discovery built-ins and stored user/generated profiles together:
 
 ```json
 {
@@ -858,9 +858,9 @@ Der Host berechnet die Schnittmenge und Vergleichbarkeit der Preferences. `compa
 }
 ```
 
-`POST`, `PATCH` und `DELETE` auf `/profiles` verwalten nur gespeicherte User-/Generated-Profile, keine Discovery-Built-ins. Mappings werden über `GET/PATCH /api/v1/plugins/routing/mappings` gelesen oder aktualisiert und sind primär für Admin- und Advanced-UI relevant, nicht für den normalen Editor-Flow.
+`POST`, `PATCH`, and `DELETE` on `/profiles` manage only stored user/generated profiles, not discovery built-ins. Mappings are read or updated via `GET/PATCH /api/v1/plugins/routing/mappings` and are primarily relevant for admin and advanced UI, not for the normal editor flow.
 
-Der Route-Endpunkt unterstützt Single-Engine- und Multi-Engine-Calls:
+The route endpoint supports single-engine and multi-engine calls:
 
 ```json
 {
@@ -888,7 +888,7 @@ Der Route-Endpunkt unterstützt Single-Engine- und Multi-Engine-Calls:
 }
 ```
 
-Für parallele Vorschläge:
+For parallel suggestions:
 
 ```json
 {
@@ -919,13 +919,13 @@ Für parallele Vorschläge:
 }
 ```
 
-Im `parallel`-Mode steht der Intent bewusst auf der obersten Ebene. Alle ausgewählten Engines beantworten dieselbe Wanderer-Absicht; pro Engine darf nur das native Mapping oder `profileId` überschrieben werden. Wenn ein Nutzer eine Gravel-Tour plant, soll Wanderer also keine Rennrad-Route als Vergleich danebenlegen. Gemischte Intents können als separate freie Variantenansicht denkbar sein, gehören aber nicht zum vergleichbaren Parallel-Routing.
+In `parallel` mode the intent deliberately sits at the top level. All selected engines answer the same Wanderer intent; per engine only the native mapping or `profileId` may be overridden. So when a user plans a gravel tour, Wanderer must not place a road-bike route next to it as a comparison. Mixed intents could be conceivable as a separate free variant view, but they do not belong to comparable parallel routing.
 
-Der Host darf Plugin-Calls parallel ausführen. Jede Plugin-Invocation nutzt weiterhin die bestehende Worker-Isolation und Timeout-Policy.
+The host may run plugin calls in parallel. Each plugin invocation still uses the existing worker isolation and timeout policy.
 
-### Host-Route-Request
+### Host route request
 
-`POST /api/v1/plugins/routing/route` ist der stabile Vertrag zwischen Frontend und Host. Der Host löst daraus Plugin-Instanzen, Intent-Mappings, native Profile und Plugin-Inputs auf.
+`POST /api/v1/plugins/routing/route` is the stable contract between frontend and host. From it the host resolves plugin instances, intent mappings, native profiles, and plugin inputs.
 
 ```json
 {
@@ -962,68 +962,68 @@ Der Host darf Plugin-Calls parallel ausführen. Jede Plugin-Invocation nutzt wei
 }
 ```
 
-Pflichtfelder:
+Required fields:
 
-| Feld | Pflicht | Bedeutung |
+| Field | Required | Meaning |
 | --- | --- | --- |
-| `routing.mode` | ja | `single` oder `parallel`. |
-| `routing.intent` | ja | Kanonischer Wanderer-Intent. |
-| `routing.engine` | ja bei `single` | Eine Engine-Auswahl. |
-| `routing.engines` | ja bei `parallel` | Eine oder mehrere Engine-Auswahlen für denselben Intent. |
-| `anchors` | ja | Mindestens zwei Punkte. |
-| `anchors[].lat` / `anchors[].lon` | ja | WGS84-Koordinaten. |
-| `preferences` | nein | Kanonische Tuning-Optionen. |
-| `requiredPreferences` | nein | Preferences, die nicht ignoriert werden dürfen. |
-| `elevation` | nein | Gewünschte Elevation-Engine; sonst User-Default oder keine Elevation. |
-| `options` | nein | Host-Optionen für Varianten, Sprache und Elevation. |
+| `routing.mode` | yes | `single` or `parallel`. |
+| `routing.intent` | yes | Canonical Wanderer intent. |
+| `routing.engine` | yes for `single` | A single engine selection. |
+| `routing.engines` | yes for `parallel` | One or more engine selections for the same intent. |
+| `anchors` | yes | At least two points. |
+| `anchors[].lat` / `anchors[].lon` | yes | WGS84 coordinates. |
+| `preferences` | no | Canonical tuning options. |
+| `requiredPreferences` | no | Preferences that must not be ignored. |
+| `elevation` | no | Desired elevation engine; otherwise user default or no elevation. |
+| `options` | no | Host options for variants, language, and elevation. |
 
 Defaults:
 
-| Feld | Default |
+| Field | Default |
 | --- | --- |
-| `options.includeElevation` | `true`, weil heutiges Verhalten Höhen nachzieht und Höhengewinn/-verlust für Kandidatenauswahl relevant sind. |
-| `options.desiredVariants` | User-Setting `default_variant_count`, sonst `1`. |
-| `options.language` | User- oder Browser-Sprache, sonst `en`. |
-| `preferences` | Intent-/Profil-Defaults aus Mapping und Plugin-Discovery. |
+| `options.includeElevation` | `true`, because current behavior backfills heights and elevation gain/loss is relevant for candidate selection. |
+| `options.desiredVariants` | User setting `default_variant_count`, otherwise `1`. |
+| `options.language` | User or browser language, otherwise `en`. |
+| `preferences` | Intent/profile defaults from mapping and plugin discovery. |
 | `requiredPreferences` | `[]`. |
-| `elevation` | User-Default `elevation_instance`, falls gesetzt. |
+| `elevation` | User default `elevation_instance`, if set. |
 
-Start-Limits:
+Initial limits:
 
-| Limit | Wert |
+| Limit | Value |
 | --- | --- |
 | Anchors | min. `2`, max. `100` |
 | `desiredVariants` | min. `1`, max. `5` |
-| Engines pro Parallel-Request | max. `5` |
-| Decodierte Punkte pro Kandidat | max. `20000` |
-| Request-Timeout pro Engine | `8000ms` |
-| Gesamt-Orchestrierung-Timeout | `15000ms` |
+| Engines per parallel request | max. `5` |
+| Decoded points per candidate | max. `20000` |
+| Request timeout per engine | `8000ms` |
+| Total orchestration timeout | `15000ms` |
 
-Parallele Requests haben Teilfehler-Semantik. Der Host gibt erfolgreiche Kandidaten von Engines zurück, die abgeschlossen haben, und hängt strukturierte per-Engine-Fehler für fehlgeschlagene Engines an. Timeout, Rate-Limit, fehlendes Mapping, ungültiges Profil oder temporärer Provider-Ausfall dürfen gültige Kandidaten anderer Engines nicht verwerfen. Ein vollständiger Request-Fehler entsteht nur, wenn keine ausgewählte Engine einen brauchbaren Kandidaten liefern kann oder die Anfrage selbst ungültig ist.
+Parallel requests have partial-failure semantics. The host returns successful candidates from engines that completed and appends structured per-engine errors for failed engines. Timeout, rate limit, missing mapping, invalid profile, or a temporary provider outage must not discard valid candidates from other engines. A full request failure occurs only when no selected engine can deliver a usable candidate or the request itself is invalid.
 
-`desiredVariants` gilt modusunabhängig. Im Single-Engine-Modus übersetzt der Host die gewünschte finale Variantenzahl in eine provider-spezifische Alternativen-Anfrage an diese eine Engine. Im Parallel-Modus kombiniert er Alternativen innerhalb einer Engine mit mehreren Engines für denselben Intent. Der Host muss Kandidaten beim Aggregieren eindeutig namespacen, z.B. über `pluginId`, `instanceId`, `profileKey` und die native Kandidaten-ID. Zwei Plugins dürfen intern beide `"primary"` liefern; in der Frontend-Antwort muss daraus eine stabile, host-seitig eindeutige Kandidaten-ID werden.
+`desiredVariants` applies regardless of mode. In single-engine mode the host translates the desired final variant count into a provider-specific alternatives request to that one engine. In parallel mode it combines alternatives within one engine with multiple engines for the same intent. When aggregating, the host must namespace candidates uniquely, e.g. via `pluginId`, `instanceId`, `profileKey`, and the native candidate ID. Two plugins may both return `"primary"` internally; in the frontend response this must become a stable, host-unique candidate ID.
 
-Die UI sollte Nutzer nicht mit "Alternativen pro Engine" belasten. Sie wählt stattdessen die gewünschte finale Anzahl sichtbarer Varianten, z.B. `desiredVariants: 3`. Der Host übersetzt diese Zahl in provider-spezifische Requests. Er darf pro Engine bis zu einer kleinen Reserve an Kandidaten anfragen, begrenzt durch Plugin-Metadata wie `maxAlternatives`, Rate-Limits und User-Policy. Die finale Antwort enthält höchstens `desiredVariants` sichtbare Kandidaten, sofern genug brauchbare Varianten existieren.
+The UI should not burden users with "alternatives per engine". Instead it selects the desired final number of visible variants, e.g. `desiredVariants: 3`. The host translates this number into provider-specific requests. It may request up to a small reserve of candidates per engine, bounded by plugin metadata such as `maxAlternatives`, rate limits, and user policy. The final response contains at most `desiredVariants` visible candidates, provided enough usable variants exist.
 
-`desiredVariants` ist dabei ein Zielwert, kein Versprechen, dass jeder Request immer mehrere Varianten auslöst. Der Host darf die effektive Variantenzahl abhängig vom Abstand der Anker, vom Routing-Kontext und von Rate-Limits reduzieren. Für sehr kurze Segmente, z.B. wenige hundert Meter einer Radtour, sind mehrere Vorschläge oft nicht hilfreich; für lange Segmente oder ganze Touren über viele Kilometer können Varianten dagegen großen Mehrwert haben. Diese Heuristik gehört zur Host-Policy und kann später über User-Settings oder Admin-Limits justiert werden.
+`desiredVariants` is a target value, not a promise that every request always produces multiple variants. The host may reduce the effective variant count depending on anchor distance, routing context, and rate limits. For very short segments, e.g. a few hundred meters of a bike tour, multiple suggestions are often unhelpful; for long segments or whole tours over many kilometers, variants can add great value. This heuristic belongs to host policy and can later be tuned via user settings or admin limits.
 
-Die Auswahl sollte nicht rein nach maximaler Abweichung erfolgen. Sonst gewinnen exotische Umwege, nur weil sie anders sind. Der Host sollte zuerst ungültige, segmentinkompatible, stark gewarnte oder extrem schlechte Kandidaten filtern und danach innerhalb eines Qualitätskorridors auf Diversität optimieren:
+The selection should not be based purely on maximum deviation. Otherwise exotic detours win just because they are different. The host should first filter out invalid, segment-incompatible, heavily warned, or extremely poor candidates, and then optimize for diversity within a quality corridor:
 
-1. gleicher kanonischer Intent als harte Pflicht;
-2. gültige Segmentstruktur und policy-konforme Geometrie;
-3. akzeptable Qualität nach Distanz, Dauer, Höhengewinn/-verlust und Warnings;
-4. ausreichend andere Linienführung gegenüber bereits gewählten Kandidaten;
-5. optional Provider-Balance, damit nicht alle Slots von derselben Engine belegt werden, wenn vergleichbar gute Alternativen existieren.
+1. same canonical intent as a hard requirement;
+2. valid segment structure and policy-compliant geometry;
+3. acceptable quality by distance, duration, elevation gain/loss, and warnings;
+4. sufficiently different alignment compared to already-selected candidates;
+5. optionally provider balance, so that not all slots are filled by the same engine when comparably good alternatives exist.
 
-Oberflächen-, Wegtyp- oder Qualitäts-Breakdowns können zukünftig als optionale normalisierte Kandidaten-Metadaten ergänzt werden. Sie sollten aber nicht stillschweigend als Host-Selektor vorausgesetzt werden, solange der Route-Output-Vertrag sie nicht liefert.
+Surface, way-type, or quality breakdowns can be added later as optional normalized candidate metadata. But they should not be silently assumed as a host selector while the route output contract does not provide them.
 
-Eine mögliche Heuristik: Der Host nimmt zunächst den besten Kandidaten und ergänzt danach Kandidaten, die genug geometrische Varianz bringen, ohne den Qualitätskorridor deutlich zu verlassen. Dadurch können BRouter und Valhalla echte Alternativen liefern, ohne dass eine absichtlich schlechte Route nur wegen hoher Varianz sichtbar wird.
+A possible heuristic: the host first takes the best candidate and then adds candidates that bring enough geometric variance without leaving the quality corridor significantly. This lets BRouter and Valhalla provide genuine alternatives without an intentionally bad route becoming visible just because of high variance.
 
-Elevation wird bei Mehrvarianten-Requests nicht für alle rohen Kandidaten berechnet, ist aber ranking-relevant. Wenn `includeElevation` gesetzt ist, nutzt der Host zunächst Höhenwerte, die eine Routing-Engine bereits mitliefert. Fehlen brauchbare Höhen, ergänzt der Host Elevation vor der finalen Auswahl für eine begrenzte, bereits vorgefilterte Shortlist. Dadurch können Höhengewinn und Höhenverlust in die Kandidatenauswahl einfließen, ohne dass jeder rohe Provider-Kandidat einen Elevation-Call erzeugt. Die Shortlist-Größe wird durch Host-Policy, Rate-Limits und `desiredVariants` begrenzt.
+For multi-variant requests, elevation is not computed for all raw candidates, but it is ranking-relevant. When `includeElevation` is set, the host first uses height values a routing engine already provides. If usable heights are missing, the host adds elevation before the final selection for a bounded, already-prefiltered shortlist. This lets elevation gain and loss feed into candidate selection without every raw provider candidate triggering an elevation call. The shortlist size is bounded by host policy, rate limits, and `desiredVariants`.
 
-### Host-Route-Response
+### Host route response
 
-`POST /api/v1/plugins/routing/route` gibt eine final kuratierte Kandidatenliste für den Editor zurück. Die Response ist host-owned: Plugin-Kandidaten werden validiert, eindeutig benannt, optional mit Elevation angereichert und mit Teilfehlern zusammengeführt.
+`POST /api/v1/plugins/routing/route` returns a final curated candidate list for the editor. The response is host-owned: plugin candidates are validated, uniquely named, optionally enriched with elevation, and merged with partial errors.
 
 ```json
 {
@@ -1087,31 +1087,31 @@ Elevation wird bei Mehrvarianten-Requests nicht für alle rohen Kandidaten berec
 }
 ```
 
-Festlegungen:
+Rules:
 
-- `candidates` enthält höchstens `desiredVariants` Kandidaten.
-- `candidate.id` wird immer vom Host erzeugt und ist innerhalb der Response eindeutig und stabil.
-- `provider.nativeCandidateId` ist optional und stammt aus dem Plugin-Output.
-- `engineErrors` enthält Teilfehler einzelner Engines oder Instanzen. Diese Fehler verwerfen erfolgreiche Kandidaten anderer Engines nicht.
-- Ein HTTP-Fehler entsteht nur, wenn der Request selbst ungültig ist oder kein nutzbarer Kandidat erzeugt werden konnte.
-- `warnings` auf Response-Ebene betreffen die Gesamtanfrage; `warnings` auf Kandidatenebene betreffen nur diesen Kandidaten.
+- `candidates` contains at most `desiredVariants` candidates.
+- `candidate.id` is always generated by the host and is unique and stable within the response.
+- `provider.nativeCandidateId` is optional and comes from the plugin output.
+- `engineErrors` contains partial failures of individual engines or instances. These errors do not discard successful candidates from other engines.
+- An HTTP error occurs only when the request itself is invalid or no usable candidate could be produced.
+- `warnings` at the response level concern the overall request; `warnings` at the candidate level concern only that candidate.
 
-Kanonische `candidate.elevation.status`-Werte:
+Canonical `candidate.elevation.status` values:
 
-| Status | Bedeutung |
+| Status | Meaning |
 | --- | --- |
-| `none` | Keine Höhen angefragt oder keine Höhen vorhanden. |
-| `included` | Die Routing-Engine hat bereits brauchbare Höhen mitgeliefert. |
-| `complete` | Der Host hat Höhen über `elevation.v1` vollständig ergänzt oder korrigiert. |
-| `partial` | Nur ein Teil der Punkte hat gültige Höhen; der Host hat punktweise Fallbacks angewendet. |
-| `pending` | Elevation wurde noch nicht berechnet, kann aber lazy für diesen Kandidaten nachgeladen werden. |
-| `failed` | Elevation wurde angefragt, ist aber fehlgeschlagen; Geometrie bleibt nutzbar. |
+| `none` | No elevation requested or no heights available. |
+| `included` | The routing engine already provided usable heights. |
+| `complete` | The host fully added or corrected heights via `elevation.v1`. |
+| `partial` | Only some points have valid heights; the host applied point-wise fallbacks. |
+| `pending` | Elevation has not been computed yet but can be loaded lazily for this candidate. |
+| `failed` | Elevation was requested but failed; geometry remains usable. |
 
-`complete`, `partial` und `failed` entstehen aus einem `elevation.v1`-Call. `included` entsteht, wenn die Routing-Engine bereits brauchbare Höhen liefert. `none` und `pending` sind Host-Zustände ohne abgeschlossenen Elevation-Call.
+`complete`, `partial`, and `failed` arise from an `elevation.v1` call. `included` arises when the routing engine already provides usable heights. `none` and `pending` are host states without a completed elevation call.
 
-### Error-Code-Modell
+### Error code model
 
-Routing-Fehler werden als maschinenlesbare Codes modelliert. `message` ist für Anzeige und Debugging gedacht. `detail` darf begrenzte, host-gefilterte Zusatzinformationen enthalten, aber keinen ungeprüften Provider-Rohdump.
+Routing errors are modeled as machine-readable codes. `message` is intended for display and debugging. `detail` may contain bounded, host-filtered extra information, but no unchecked raw provider dump.
 
 ```json
 {
@@ -1125,61 +1125,61 @@ Routing-Fehler werden als maschinenlesbare Codes modelliert. `message` ist für 
 }
 ```
 
-Vorgeschlagene Codes:
+Suggested codes:
 
-| Code | Bedeutung | Wirkung |
+| Code | Meaning | Effect |
 | --- | --- | --- |
-| `mapping_missing` | Für Intent und Plugin existiert kein Mapping. | Engine-fatal |
-| `profile_missing` | Referenziertes Profil existiert nicht oder ist deaktiviert. | Engine-fatal |
-| `profile_invalid` | Profilinhalt ist ungültig oder vom Plugin nicht verarbeitbar. | Engine-fatal |
-| `unsupported_intent` | Plugin unterstützt den gewählten Intent grundsätzlich nicht. | Engine-fatal |
-| `unsupported_preference` | Preference kann nicht angewendet werden. | Warning oder Engine-fatal |
-| `provider_timeout` | Provider-, Connector- oder Plugin-Aufruf überschreitet Timeout. | Engine-fatal |
-| `provider_rate_limited` | Provider oder Host-Policy limitiert die Anfrage. | Engine-fatal |
-| `provider_unavailable` | Provider antwortet nicht oder liefert temporären Fehler. | Engine-fatal |
-| `connector_denied` | Plugin versucht nicht erlaubten Connector oder Pfad zu nutzen. | Engine-fatal, Security-relevant |
-| `response_too_large` | Provider- oder Plugin-Response überschreitet Host-Limits. | Engine-fatal |
-| `candidate_invalid` | Kandidat kann nicht normalisiert werden. | Kandidat-fatal |
-| `candidate_segment_mismatch` | Segmente passen nicht zu den angefragten Anchor-Paaren. | Kandidat-fatal |
-| `candidate_geometry_invalid` | Polyline oder Shape ist kaputt, leer oder nicht decodierbar. | Kandidat-fatal |
-| `candidate_policy_violation` | Kandidat verletzt Host-Limits, z.B. zu viele Punkte. | Kandidat-fatal |
-| `elevation_failed` | Elevation konnte nicht berechnet werden. | Nicht route-fatal |
-| `elevation_partial` | Elevation ist nur teilweise verfügbar. | Warning |
-| `internal_error` | Unerwarteter Host- oder Plugin-Fehler. | Engine-fatal |
+| `mapping_missing` | No mapping exists for the intent and plugin. | Engine-fatal |
+| `profile_missing` | Referenced profile does not exist or is disabled. | Engine-fatal |
+| `profile_invalid` | Profile content is invalid or not processable by the plugin. | Engine-fatal |
+| `unsupported_intent` | Plugin does not support the selected intent at all. | Engine-fatal |
+| `unsupported_preference` | Preference cannot be applied. | Warning or engine-fatal |
+| `provider_timeout` | Provider, connector, or plugin call exceeds the timeout. | Engine-fatal |
+| `provider_rate_limited` | Provider or host policy limits the request. | Engine-fatal |
+| `provider_unavailable` | Provider does not respond or returns a temporary error. | Engine-fatal |
+| `connector_denied` | Plugin tries to use a non-allowed connector or path. | Engine-fatal, security-relevant |
+| `response_too_large` | Provider or plugin response exceeds host limits. | Engine-fatal |
+| `candidate_invalid` | Candidate cannot be normalized. | Candidate-fatal |
+| `candidate_segment_mismatch` | Segments do not match the requested anchor pairs. | Candidate-fatal |
+| `candidate_geometry_invalid` | Polyline or shape is broken, empty, or not decodable. | Candidate-fatal |
+| `candidate_policy_violation` | Candidate violates host limits, e.g. too many points. | Candidate-fatal |
+| `elevation_failed` | Elevation could not be computed. | Not route-fatal |
+| `elevation_partial` | Elevation is only partially available. | Warning |
+| `internal_error` | Unexpected host or plugin error. | Engine-fatal |
 
-Fehlerklassen:
+Error classes:
 
-- Request-fatal: Der Client-Request ist ungültig oder am Ende bleibt kein nutzbarer Kandidat übrig. Der Host antwortet mit HTTP-Fehler.
-- Engine-fatal: Eine Engine-Invocation ist für diesen Request unbrauchbar. Der Fehler landet in `engineErrors`; erfolgreiche Kandidaten anderer Engines bleiben erhalten.
-- Kandidat-fatal: Ein einzelner Kandidat wird verworfen. Wenn dadurch alle Kandidaten einer Engine wegfallen, erzeugt der Host einen Engine-Fehler.
-- Warning: Response oder Kandidat bleibt nutzbar.
+- Request-fatal: The client request is invalid, or in the end no usable candidate remains. The host responds with an HTTP error.
+- Engine-fatal: An engine invocation is unusable for this request. The error lands in `engineErrors`; successful candidates from other engines remain.
+- Candidate-fatal: A single candidate is discarded. If this removes all candidates of an engine, the host produces an engine error.
+- Warning: Response or candidate remains usable.
 
-`unsupported_preference` ist standardmäßig eine Warning: Das Plugin ignoriert die Preference und dokumentiert dies in `warnings`. Fatal wird der Fehler nur, wenn der Host die Preference als verpflichtend markiert hat, z.B. über `requiredPreferences`, oder wenn sie für einen bestimmten Vergleich zwingend ist.
+`unsupported_preference` is a warning by default: the plugin ignores the preference and documents this in `warnings`. The error becomes fatal only when the host has marked the preference as mandatory, e.g. via `requiredPreferences`, or when it is required for a specific comparison.
 
-HTTP-Status der Host-Endpunkte:
+HTTP status of the host endpoints:
 
 | Status | Situation |
 | --- | --- |
-| `200` | Mindestens ein nutzbarer Kandidat wurde erzeugt. Teilfehler einzelner Engines stehen in `engineErrors`. |
-| `400` | Request ist syntaktisch oder strukturell ungültig, z.B. kaputtes JSON, ungültige Koordinaten, zu wenige Anchors oder `desiredVariants` außerhalb der Limits. |
-| `401` | User ist nicht authentifiziert. |
-| `403` | User darf die angefragte Plugin-Instanz, das Profil oder die Einstellung nicht nutzen. |
-| `404` | Explizit referenzierte Ressource existiert nicht im sichtbaren Scope, z.B. Plugin-Instanz oder gespeichertes Profil. |
-| `422` | Request ist formal gültig, kann aber fachlich nicht aufgelöst werden, z.B. fehlendes Mapping, unsupported Intent, verpflichtende Preference nicht unterstützbar oder alle Kandidaten wegen Segment-/Geometrievalidierung verworfen. |
-| `429` | Host-Rate-Limit verhindert den Request vor oder während der Orchestrierung. |
-| `502` | Alle ausgewählten Engines scheitern an Provider-/Connector-/Plugin-Fehlern ohne nutzbaren Kandidaten. |
-| `504` | Alle ausgewählten Engines überschreiten die relevanten Timeouts ohne nutzbaren Kandidaten. |
-| `500` | Unerwarteter Host-Fehler. |
+| `200` | At least one usable candidate was produced. Partial failures of individual engines are in `engineErrors`. |
+| `400` | Request is syntactically or structurally invalid, e.g. broken JSON, invalid coordinates, too few anchors, or `desiredVariants` out of limits. |
+| `401` | User is not authenticated. |
+| `403` | User is not allowed to use the requested plugin instance, profile, or setting. |
+| `404` | Explicitly referenced resource does not exist in the visible scope, e.g. plugin instance or stored profile. |
+| `422` | Request is formally valid but cannot be resolved semantically, e.g. missing mapping, unsupported intent, a mandatory preference that cannot be supported, or all candidates discarded due to segment/geometry validation. |
+| `429` | Host rate limit blocks the request before or during orchestration. |
+| `502` | All selected engines fail with provider/connector/plugin errors without a usable candidate. |
+| `504` | All selected engines exceed the relevant timeouts without a usable candidate. |
+| `500` | Unexpected host error. |
 
-Bei gemischten Fehlern ohne Kandidaten wählt der Host den Status nach der dominierenden Ursache: Client-/Mapping-Probleme vor Provider-Problemen, Rate-Limit vor Provider-Fehlern, Timeout nur dann `504`, wenn kein anderer nutzbarer Kandidat und kein spezifischerer Client- oder Policy-Fehler vorliegt. Sobald mindestens ein Kandidat nutzbar ist, bleibt die Antwort `200` und alle anderen Fehler werden als `engineErrors` oder `warnings` transportiert.
+For mixed errors without candidates, the host picks the status by the dominant cause: client/mapping problems before provider problems, rate limit before provider errors, timeout only as `504` when no other usable candidate and no more specific client or policy error is present. As soon as at least one candidate is usable, the response stays `200` and all other errors are transported as `engineErrors` or `warnings`.
 
-## Persistenz und Auflösung
+## Persistence and resolution
 
-Routing-Einstellungen, Intents, Mappings und provider-native Profile sind host-owned. Plugins liefern Discovery und Protokollübersetzung, persistieren aber keine eigenen Dateien oder User-Konfigurationen.
+Routing settings, intents, mappings, and provider-native profiles are host-owned. Plugins provide discovery and protocol translation but do not persist their own files or user configurations.
 
 ### `routing_settings`
 
-Pro User existiert genau ein Settings-Record:
+There is exactly one settings record per user:
 
 ```text
 routing_settings
@@ -1192,13 +1192,13 @@ routing_settings
   default_preferences
 ```
 
-`compare_instances` speichert Engines, die der Editor für parallele Vorschläge nutzt. `elevation_instance` darf leer sein; dann behält der Host je nach Request Provider-Höhen, bestehende GPX-Höhen oder liefert Geometrie ohne Höhen zurück. `default_variant_count` ist die User-Default-Anzahl sichtbarer Routenvorschläge, die der Editor in `options.desiredVariants` übernehmen kann.
+`compare_instances` stores the engines the editor uses for parallel suggestions. `elevation_instance` may be empty; the host then, depending on the request, keeps provider heights, keeps existing GPX heights, or returns geometry without heights. `default_variant_count` is the user default number of visible route suggestions the editor can adopt into `options.desiredVariants`.
 
-`primary_route_profile` wird bewusst nicht in User-Settings gespeichert. Der Default läuft über `default_intent` plus Mapping-Auflösung, damit Settings nicht direkt an provider-native Profile gekoppelt werden.
+`primary_route_profile` is deliberately not stored in user settings. The default runs via `default_intent` plus mapping resolution, so that settings are not directly coupled to provider-native profiles.
 
 ### `routing_intents`
 
-Kanonische Wanderer-Intents sollten getrennt von provider-nativen Profilen gespeichert werden:
+Canonical Wanderer intents should be stored separately from provider-native profiles:
 
 ```text
 routing_intents
@@ -1214,20 +1214,20 @@ routing_intents
   updated
 ```
 
-Semantik:
+Semantics:
 
-- `scope = "builtin"` für Wanderer-Defaults.
-- `scope = "admin"` für instanzweite Custom-Intents.
-- `scope = "user"` für persönliche Varianten oder Aliase.
-- `user` ist leer für Built-in- und Admin-Scopes und gesetzt für User-Scopes.
-- `key` ist innerhalb von `(scope, user, key)` stabil, z.B. `bike_balanced` oder `bike_commute`.
-- `mode` ist einer der generischen Modes wie `foot`, `bike` oder `motor`.
-- Vergleichbarkeit gilt über den aufgelösten kanonischen Intent-Key.
-- User-Intents sind nicht global vergleichbar, außer sie mappen explizit auf denselben Admin- oder Built-in-Key oder werden als Alias modelliert.
+- `scope = "builtin"` for Wanderer defaults.
+- `scope = "admin"` for instance-wide custom intents.
+- `scope = "user"` for personal variants or aliases.
+- `user` is empty for built-in and admin scopes and set for user scopes.
+- `key` is stable within `(scope, user, key)`, e.g. `bike_balanced` or `bike_commute`.
+- `mode` is one of the generic modes such as `foot`, `bike`, or `motor`.
+- Comparability applies via the resolved canonical intent key.
+- User intents are not globally comparable unless they explicitly map onto the same admin or built-in key or are modeled as an alias.
 
 ### `routing_profile_mappings`
 
-Intent-zu-Plugin-Mappings liegen in einer separaten Collection:
+Intent-to-plugin mappings live in a separate collection:
 
 ```text
 routing_profile_mappings
@@ -1246,20 +1246,20 @@ routing_profile_mappings
   updated
 ```
 
-Semantik:
+Semantics:
 
-- `scope = "plugin"` für Mappings aus Plugin-Metadata; diese müssen nicht materialisiert werden.
-- `scope = "admin"` für instanzweite Admin-Mappings.
-- `scope = "user"` für persönliche Overrides.
-- `native_profile_id` referenziert ein gespeichertes `routing_profiles`-Record, wenn das Mapping auf ein hochgeladenes oder erzeugtes Profil zeigt.
-- `native_profile_key` referenziert ein plugin-deklariertes Profil wie `trekking`.
-- `native_config` speichert provider-spezifische Option-Presets wie Valhalla `costing_options`.
-- Mindestens eines der Felder `native_profile_id`, `native_profile_key` oder `native_config` muss gesetzt sein.
-- `plugin_instance` ist optional. Wenn gesetzt, gilt das Mapping nur für diese konkrete Plugin-Instanz.
+- `scope = "plugin"` for mappings from plugin metadata; these need not be materialized.
+- `scope = "admin"` for instance-wide admin mappings.
+- `scope = "user"` for personal overrides.
+- `native_profile_id` references a stored `routing_profiles` record when the mapping points to an uploaded or generated profile.
+- `native_profile_key` references a plugin-declared profile such as `trekking`.
+- `native_config` stores provider-specific option presets such as Valhalla `costing_options`.
+- At least one of the fields `native_profile_id`, `native_profile_key`, or `native_config` must be set.
+- `plugin_instance` is optional. When set, the mapping applies only to that concrete plugin instance.
 
 ### `routing_profiles`
 
-Provider-native Profile sind der zentrale Erweiterungspunkt für provider- spezifisches Verhalten. Sie sollten host-seitig gespeichert werden:
+Provider-native profiles are the central extension point for provider-specific behavior. They should be stored host-side:
 
 ```text
 routing_profiles
@@ -1279,117 +1279,117 @@ routing_profiles
   updated
 ```
 
-Semantik:
+Semantics:
 
-- `kind = "builtin"` referenziert einen plugin-deklarierten Profil-Key und hat keinen Dateiinhalt.
-- `kind = "custom_file"` speichert eine begrenzte User-Upload-Datei.
-- `kind = "generated"` speichert ein aus Template und Preferences erzeugtes natives Profil, z.B. eine generierte BRouter-`.brf`.
-- `plugin_id` scoped Profile auf die Engine, die sie versteht.
-- `key` ist der provider-facing Profil-Identifier, sofern relevant.
-- `content` ist verschlüsselt oder als geschützte Datei gespeichert, weil Profile persönliche Präferenzen enthalten können.
-- `checksum` hilft, Duplikate, Caches und unveränderte generierte Profile zu erkennen.
-- Der Host erzwingt Größen- und Content-Type-Limits, bevor er Profile an Plugins weitergibt.
+- `kind = "builtin"` references a plugin-declared profile key and has no file content.
+- `kind = "custom_file"` stores a bounded user upload file.
+- `kind = "generated"` stores a native profile generated from a template and preferences, e.g. a generated BRouter `.brf`.
+- `plugin_id` scopes the profile to the engine that understands it.
+- `key` is the provider-facing profile identifier, where relevant.
+- `content` is stored encrypted or as a protected file, because profiles can contain personal preferences.
+- `checksum` helps detect duplicates, caches, and unchanged generated profiles.
+- The host enforces size and content-type limits before passing profiles to plugins.
 
-BRouter kann damit `.brf`-Uploads unterstützen, ohne Valhalla oder andere Engines zur Kenntnis der BRouter-Profilsprache zu zwingen. Das BRouter-Plugin erhält den Profilinhalt und entscheidet, wie es ihn an BRouter-Service oder lokale Runtime übergibt.
+BRouter can thus support `.brf` uploads without forcing Valhalla or other engines to understand the BRouter profile language. The BRouter plugin receives the profile content and decides how to pass it to the BRouter service or local runtime.
 
-Eingebaute Plugin-Profile werden nicht als Records materialisiert. Der Host listet sie aus Discovery über `GET /profiles`. Materialisiert werden nur User-Uploads, generierte Profile und Admin-/User-Overrides mit eigener Config.
+Built-in plugin profiles are not materialized as records. The host lists them from discovery via `GET /profiles`. Only user uploads, generated profiles, and admin/user overrides with their own config are materialized.
 
-### Mapping-Auflösung
+### Mapping resolution
 
-Für einen Routing-Request löst der Host pro Engine in dieser Reihenfolge auf:
+For a routing request, the host resolves per engine in this order:
 
-1. User wählt oder erhält einen `intent`.
-2. Host bestimmt Route-Engine(s) aus Request oder User-Defaults.
-3. Host sucht ein Mapping in dieser Reihenfolge: User-Mapping für `(user, intent, plugin_instance)`, User-Mapping für `(user, intent, plugin_id)`, Admin-Mapping für `(intent, plugin_instance)`, Admin-Mapping für `(intent, plugin_id)`, Plugin-Discovery-Mapping aus `metadata.routing.intents`.
-4. Host kombiniert Mapping, native Config, Request-Preferences und Defaults aus Plugin-Discovery.
-5. Host prüft Preference-Support und `requiredPreferences`.
-6. Host baut daraus den `route.v1` Plugin-Input.
+1. The user selects or receives an `intent`.
+2. The host determines the route engine(s) from the request or user defaults.
+3. The host searches for a mapping in this order: user mapping for `(user, intent, plugin_instance)`, user mapping for `(user, intent, plugin_id)`, admin mapping for `(intent, plugin_instance)`, admin mapping for `(intent, plugin_id)`, plugin discovery mapping from `metadata.routing.intents`.
+4. The host combines mapping, native config, request preferences, and defaults from plugin discovery.
+5. The host checks preference support and `requiredPreferences`.
+6. The host builds the `route.v1` plugin input from this.
 
-Wenn kein Mapping existiert, erzeugt der Host `mapping_missing`.
+If no mapping exists, the host produces `mapping_missing`.
 
-## Engine-Komposition
+## Engine composition
 
-Der Host ist für Komposition verantwortlich:
+The host is responsible for composition:
 
-1. Route-Plugin-Instanzen anhand von Request und User-Defaults auswählen.
-2. Pro Engine eine begrenzte Anzahl nativer Alternativen anfragen, abgeleitet aus `desiredVariants`, `maxAlternatives`, Rate-Limits und Policy.
-3. Geometrie, Summaries und Anchor-Pair-Segmente normalisieren.
-4. Kandidaten validieren, eindeutig namespacen und eine begrenzte Shortlist bilden.
-5. Falls Höhen angefragt wurden und Shortlist-Kandidaten keine brauchbaren Höhen haben, `elevation.v1` für diese Shortlist ergänzen.
-6. Shortlist mit Höhenmetrik, Summary, Warnings und Geometrie auf höchstens `desiredVariants` sichtbare Varianten kuratieren.
-7. Kandidaten mit Provider-Metadata ans Frontend zurückgeben.
+1. Select route plugin instances based on the request and user defaults.
+2. Request a bounded number of native alternatives per engine, derived from `desiredVariants`, `maxAlternatives`, rate limits, and policy.
+3. Normalize geometry, summaries, and anchor-pair segments.
+4. Validate candidates, namespace them uniquely, and form a bounded shortlist.
+5. If heights were requested and shortlist candidates have no usable heights, add `elevation.v1` for that shortlist.
+6. Curate the shortlist by elevation metric, summary, warnings, and geometry down to at most `desiredVariants` visible variants.
+7. Return candidates with provider metadata to the frontend.
 
-Der Host kombiniert Kandidaten aus zwei Quellen: mehrere Alternativen derselben Engine und mehrere Engines im Parallel-Modus. Die finale Antwort ans Frontend ist eine flache Kandidatenliste mit eindeutiger Host-ID und Provenienz (`pluginId`, `instanceId`, `provider`, `profileKey`, optional native Kandidaten-ID). Dadurch kann der Editor Kandidaten stabil auswählen, auch wenn mehrere Engines denselben internen Kandidatennamen verwenden.
+The host combines candidates from two sources: multiple alternatives from the same engine and multiple engines in parallel mode. The final response to the frontend is a flat candidate list with a unique host ID and provenance (`pluginId`, `instanceId`, `provider`, `profileKey`, optional native candidate ID). This lets the editor select candidates stably even when multiple engines use the same internal candidate name.
 
-Die Pipeline wird phasenweise aktiviert. Phase 4 braucht bereits die Single-Engine-Komposition mit separater Elevation-Engine: Route von BRouter, Höhen z.B. von Valhalla, validiert und normalisiert durch den Host. Phase 5 aktiviert zusätzlich Multi-Engine-Fan-out, Teilfehler-Aggregation, Shortlist-Bildung über mehrere Engines und die finale Diversitäts-Kuratierung.
+The pipeline is activated in phases. Phase 4 already needs single-engine composition with a separate elevation engine: route from BRouter, heights e.g. from Valhalla, validated and normalized by the host. Phase 5 additionally activates multi-engine fan-out, partial-failure aggregation, shortlist formation across multiple engines, and the final diversity curation.
 
-Der Host muss validieren, dass jeder zurückgegebene Kandidat auf die angefragten Anchor-Paare zurückführbar ist, bevor er das Ergebnis ans Frontend gibt. Ein Plugin darf global über alle Anchors routen, muss aber entweder Segment-Geometrien oder gültige `shapeRange`-Werte liefern, damit der Host das Ergebnis als ein GPX-`trkseg` pro Anchor-Paar materialisieren kann.
+The host must validate that every returned candidate is traceable to the requested anchor pairs before it hands the result to the frontend. A plugin may route globally over all anchors but must provide either segment geometries or valid `shapeRange` values so the host can materialize the result as one GPX `trkseg` per anchor pair.
 
-Unterstützte Setups:
+Supported setups:
 
-- Valhalla für Routing und Höheninformationen.
-- BRouter für Routing und Valhalla für Höheninformationen.
-- Mehrere Routenkandidaten von BRouter und Valhalla.
-- GraphHopper als Konzeptvalidierung für ein drittes Profil- und Custom-Model-Paradigma.
-- Host-native Luftlinie mit Valhalla-Höhenkorrektur.
-- Zukünftige Elevation-only-Plugins.
+- Valhalla for routing and elevation.
+- BRouter for routing and Valhalla for elevation.
+- Multiple route candidates from BRouter and Valhalla.
+- GraphHopper as concept validation for a third profile and custom-model paradigm.
+- Host-native straight line with Valhalla height correction.
+- Future elevation-only plugins.
 
-## Validierungsmatrix
+## Validation matrix
 
-Die Spezifikation gilt als tragfähig, wenn Valhalla das aktuelle Verhalten ersetzen kann, BRouter ohne Sonderpfad angebunden werden kann und GraphHopper als dritter Konzeptfall keine neuen Grundbegriffe erzwingt.
+The specification is considered sound if Valhalla can replace the current behavior, BRouter can be integrated without a special path, and GraphHopper as a third concept case forces no new fundamental concepts.
 
-| Fähigkeit | Valhalla | BRouter | GraphHopper | Spezifikationsschluss |
+| Capability | Valhalla | BRouter | GraphHopper | Specification conclusion |
 | --- | --- | --- | --- | --- |
-| `route.v1` | Ja. | Ja. | Ja. | Capability passt für alle Referenz-Engines. |
-| `elevation.v1` | Ja. | Eher nein oder optional. | Ja, abhängig vom Setup. | Elevation muss eigenständig bleiben. |
-| Costing-/Profilmodell | `costing_options`. | `.brf`-Profile. | Profile und Custom Models. | Wanderer-Intents mappen auf Provider-Dialekte. |
-| Custom User-Profile | Native Config. | `.brf` Upload oder generiertes Profil. | Custom Model oder Config. | `routing_profiles.kind` braucht `custom_file` und `generated`. |
-| Varianten | Valhalla Alternates. | Profil-/Service-abhängig. | Alternative Routes. | Host kuratiert Varianten provider-neutral. |
-| Segment-Geometrie | Aus Legs und Shapes ableitbar. | Abhängig vom API-Output. | Aus Paths/Points ableitbar. | Segmentvertrag bleibt Pflicht. |
-| Tuning-Preferences | Direkt über Optionen. | Über `.brf` Template oder Profilwahl. | Über Custom Model oder Advanced Config. | Preference-Support braucht `full`, `partial`, `template`, `advanced`. |
-| Höhen fürs Ranking | Möglich. | Eher via externes Elevation-Plugin. | Möglich. | Shortlist-Elevation im Host ist nötig. |
-| Provider-native Advanced UI | Costing Options. | Profilwahl und Upload. | Custom Model. | Advanced UI bleibt getrennt von Standard-Preferences. |
+| `route.v1` | Yes. | Yes. | Yes. | Capability fits all reference engines. |
+| `elevation.v1` | Yes. | Rather no, or optional. | Yes, depending on setup. | Elevation must stay independent. |
+| Costing/profile model | `costing_options`. | `.brf` profiles. | Profiles and custom models. | Wanderer intents map onto provider dialects. |
+| Custom user profiles | Native config. | `.brf` upload or generated profile. | Custom model or config. | `routing_profiles.kind` needs `custom_file` and `generated`. |
+| Variants | Valhalla alternates. | Profile/service dependent. | Alternative routes. | Host curates variants provider-neutrally. |
+| Segment geometry | Derivable from legs and shapes. | Depends on API output. | Derivable from paths/points. | Segment contract stays mandatory. |
+| Tuning preferences | Directly via options. | Via `.brf` template or profile choice. | Via custom model or advanced config. | Preference support needs `full`, `partial`, `template`, `advanced`. |
+| Heights for ranking | Possible. | Rather via external elevation plugin. | Possible. | Shortlist elevation in the host is needed. |
+| Provider-native advanced UI | Costing options. | Profile choice and upload. | Custom model. | Advanced UI stays separate from standard preferences. |
 
-Validierungsfälle:
+Validation cases:
 
-1. Valhalla-only ersetzt den heutigen Zustand. `hike`, `bike_balanced` und `car` funktionieren über das Valhalla-Plugin, Elevation kommt von Valhalla, `pedestrian` migriert auf `hike`, und alte `/api/v1/valhalla/*`-Endpunkte werden entfernt.
-2. BRouter plus Valhalla Elevation funktioniert ohne Sonderpfad. Routing nutzt z.B. BRouter `trekking`, Elevation nutzt Valhalla, `.brf` Uploads sind möglich, und generierte `.brf` Profile können aus Preferences entstehen.
-3. Paralleles Routing mit Valhalla und BRouter nutzt denselben Wanderer-Intent, z.B. `gravel`. `desiredVariants` begrenzt die sichtbaren Kandidaten, der Host kuratiert Varianten, und Teilfehler einer Engine verwerfen andere Kandidaten nicht.
-4. GraphHopper passt als Konzeptcheck. Intents lassen sich auf Profile oder Custom Models mappen, Preferences können über Custom Models oder Advanced Config abgebildet werden, und GraphHopper-Sprache wird nicht zur Wanderer- Standard-API.
-5. Host-native Luftlinie bleibt ohne Routing-Plugin möglich. Elevation kann trotzdem über `elevation.v1` ergänzt werden, und das Segmentmodell bleibt erhalten.
+1. Valhalla-only replaces the current state. `hike`, `bike_balanced`, and `car` work via the Valhalla plugin, elevation comes from Valhalla, `pedestrian` migrates to `hike`, and old `/api/v1/valhalla/*` endpoints are removed.
+2. BRouter plus Valhalla elevation works without a special path. Routing uses e.g. BRouter `trekking`, elevation uses Valhalla, `.brf` uploads are possible, and generated `.brf` profiles can be derived from preferences.
+3. Parallel routing with Valhalla and BRouter uses the same Wanderer intent, e.g. `gravel`. `desiredVariants` bounds the visible candidates, the host curates variants, and a partial failure of one engine does not discard other candidates.
+4. GraphHopper fits as a concept check. Intents can be mapped onto profiles or custom models, preferences can be expressed via custom models or advanced config, and the GraphHopper language does not become the Wanderer standard API.
+5. Host-native straight line remains possible without a routing plugin. Elevation can still be added via `elevation.v1`, and the segment model is preserved.
 
-## Umsetzungsphasen für OSPX
+## OSPX implementation phases
 
-Das Konzept beschreibt den Zielzustand. Für die Umsetzung sollte daraus nicht ein einzelner großer Change entstehen, sondern eine Folge kleiner, reviewbarer OSPX-Changes. Jede Phase darf das Zielbild weiter vorbereiten und muss für sich testbar bleiben. Phase 1 ist dabei bewusst die Ausnahme beim Risiko: Der Valhalla-Cutover ist ein harter Schnitt ohne Legacy-Adapter. Dieses Risiko wird nicht durch Rollback-Kompatibilität reduziert, sondern durch klare Definition-of-Done, direkte Frontend-Umstellung und Tests gegen das bisherige Editor-Verhalten.
+The concept describes the target state. The implementation should not become a single large change but a sequence of small, reviewable OSPX changes. Each phase may further prepare the target picture and must stay testable on its own. Phase 1 is deliberately the exception in terms of risk: the Valhalla cutover is a hard cut without a legacy adapter. This risk is reduced not by rollback compatibility, but by a clear definition of done, direct frontend migration, and tests against the previous editor behavior.
 
-Empfohlene Phasen:
+Recommended phases:
 
-| Phase | OSPX-Change | Ziel | Enthält | Noch nicht enthalten |
+| Phase | OSPX change | Goal | Includes | Not yet included |
 | --- | --- | --- | --- | --- |
-| 1 | `phase-1-routing-plugin-valhalla-cutover` | Valhalla läuft als erstes `routing`-Plugin und ersetzt die alten Endpunkte. | `route.v1`/`elevation.v1` für Valhalla, harte Entfernung von `/api/v1/valhalla/*`, Frontend-Umbenennung von `valhalla_*` auf `routing_*`, `pedestrian` -> `hike`, eingebaute Default-Intents/-Mappings für `hike`, `bike_balanced` und `car`, aktuelle Preferences fest verdrahtet für Valhalla, Segmentvertrag und Polyline-Konvention als funktionale Definition-of-Done. | BRouter, parallele Varianten, User-Uploads, persistente Intent-/Mapping-Administration. |
-| 2 | `phase-2-routing-host-contracts` | Host-Verträge werden gehärtet und testbar gemacht. | Host-Route-Response, vollständige HTTP-Status-Matrix, Fehlercodes, Elevation-Status, Limits, Konformitäts- und Grenzfalltests für Segmentvertrag und Polyline-Konvention. | Neue Provider, komplexe Profilverwaltung. |
-| 3 | `phase-3-routing-intents-profiles-mappings` | Default-Intents, Preferences und Mapping-Auflösung werden persistent und administrierbar. | `routing_settings`, `routing_intents`, `routing_profile_mappings`, `routing_profiles`, Standard-Preferences, effective controls; die in Phase 1 fest verdrahteten Defaults werden in Collections und Admin-/User-Auflösung überführt. | BRouter-spezifische `.brf`-Runtime, Multi-Engine-Fan-out. |
-| 4 | `phase-4-routing-plugin-brouter` | BRouter validiert die Abstraktion als zweite strukturell andere Engine. | BRouter `route.v1`, native Profile, `.brf` Upload, generierte `.brf`-Profile aus Templates, Single-Engine-BRouter-Routing mit separater Elevation-Engine wie Valhalla. | Automatische Cross-Engine-Kandidatenauswahl, Parallel-Fan-out. |
-| 5 | `phase-5-routing-parallel-variants` | Mehrere Engines und mehrere Varianten werden im Editor vergleichbar nutzbar. | Parallel-Fan-out, Teilfehler-Aggregation, `desiredVariants`, Distanz-/Kontext-Heuristik, Kandidaten-Shortlist, Diversitäts-Kuratierung, UI-Kandidatenvergleich. | Cross-Engine-Stitching und Profilformat-Übersetzung bleiben ausgeschlossen. |
+| 1 | `phase-1-routing-plugin-valhalla-cutover` | Valhalla runs as the first `routing` plugin and replaces the old endpoints. | `route.v1`/`elevation.v1` for Valhalla, hard removal of `/api/v1/valhalla/*`, frontend rename from `valhalla_*` to `routing_*`, `pedestrian` -> `hike`, built-in default intents/mappings for `hike`, `bike_balanced`, and `car`, current preferences hard-coded for Valhalla, segment contract and polyline convention as a functional definition of done. | BRouter, parallel variants, user uploads, persistent intent/mapping administration. |
+| 2 | `phase-2-routing-host-contracts` | Host contracts are hardened and made testable. | Host route response, full HTTP status matrix, error codes, elevation status, limits, conformance and edge-case tests for the segment contract and polyline convention. | New providers, complex profile management. |
+| 3 | `phase-3-routing-intents-profiles-mappings` | Default intents, preferences, and mapping resolution become persistent and administrable. | `routing_settings`, `routing_intents`, `routing_profile_mappings`, `routing_profiles`, standard preferences, effective controls; the phase-1 hard-coded defaults are lifted into collections and admin/user resolution. | BRouter-specific `.brf` runtime, multi-engine fan-out. |
+| 4 | `phase-4-routing-plugin-brouter` | BRouter validates the abstraction as a second, structurally different engine. | BRouter `route.v1`, native profiles, `.brf` upload, generated `.brf` profiles from templates, single-engine BRouter routing with a separate elevation engine such as Valhalla. | Automatic cross-engine candidate selection, parallel fan-out. |
+| 5 | `phase-5-routing-parallel-variants` | Multiple engines and multiple variants become comparably usable in the editor. | Parallel fan-out, partial-failure aggregation, `desiredVariants`, distance/context heuristic, candidate shortlist, diversity curation, UI candidate comparison. | Cross-engine stitching and profile-format translation stay excluded. |
 
-Phase 1 und 2 können eng zusammen umgesetzt werden, sollten aber als getrennte OSPX-Changes beschrieben werden: Phase 1 ist der funktionale Cutover und muss bereits die Mindestverträge implementieren, die der Editor braucht. Phase 2 härtet diese Verträge für alle späteren Provider aus. Phase 3 hebt die Phase-1-Defaults aus fest verdrahteten Valhalla-Mappings in persistente, administrierbare Collections. Phase 4 nutzt die Komposition "Routing-Engine != Elevation-Engine" bereits im Single-Engine-Pfad. Phase 5 ergänzt erst danach Multi-Engine-Fan-out und kuratierte Varianten.
+Phases 1 and 2 can be implemented closely together but should be described as separate OSPX changes: Phase 1 is the functional cutover and must already implement the minimum contracts the editor needs. Phase 2 hardens these contracts for all later providers. Phase 3 lifts the phase-1 defaults out of hard-coded Valhalla mappings into persistent, administrable collections. Phase 4 already uses the "routing engine != elevation engine" composition in the single-engine path. Phase 5 only then adds multi-engine fan-out and curated variants.
 
-## Valhalla-Plugin-Migration
+## Valhalla plugin migration
 
-Valhalla soll das erste Routing-Plugin sein und das aktuelle Verhalten möglichst nah erhalten. Die Migration ist bewusst ein harter Schnitt ohne Legacy-Adapter: Die alten `/api/v1/valhalla/*`-Endpunkte werden entfernt, und das Frontend wird direkt auf die neue Routing-API umgestellt.
+Valhalla is to be the first routing plugin and to preserve the current behavior as closely as possible. The migration is deliberately a hard cut without a legacy adapter: the old `/api/v1/valhalla/*` endpoints are removed, and the frontend is switched directly to the new routing API.
 
-Mapping aus aktuellen Wanderer-Optionen:
+Mapping from current Wanderer options:
 
-| Aktuelle Option | Routing-API | Valhalla-Mapping |
+| Current option | Routing API | Valhalla mapping |
 | --- | --- | --- |
-| `modeOfTransport: "pedestrian"` | `mode: "foot"`, Intent `hike` | `costing: "pedestrian"` mit Hiking-Preset |
-| `modeOfTransport: "bicycle"` | `mode: "bike"`, Intent `bike_balanced` | `costing: "bicycle"` |
-| `modeOfTransport: "auto"` | `mode: "motor"`, Intent `car` | `costing: "auto"` |
-| `walking_speed` | `preferences.speedKmh` bei `foot` | `pedestrian.walking_speed` |
-| `use_hills` | `preferences.hillPreference` bei `foot`/`bike` | `pedestrian.use_hills` oder `bicycle.use_hills` |
+| `modeOfTransport: "pedestrian"` | `mode: "foot"`, intent `hike` | `costing: "pedestrian"` with hiking preset |
+| `modeOfTransport: "bicycle"` | `mode: "bike"`, intent `bike_balanced` | `costing: "bicycle"` |
+| `modeOfTransport: "auto"` | `mode: "motor"`, intent `car` | `costing: "auto"` |
+| `walking_speed` | `preferences.speedKmh` for `foot` | `pedestrian.walking_speed` |
+| `use_hills` | `preferences.hillPreference` for `foot`/`bike` | `pedestrian.use_hills` or `bicycle.use_hills` |
 | `max_hiking_difficulty` | `preferences.maxHikingDifficulty` | `pedestrian.max_hiking_difficulty` |
 | `bicycle_type` | `preferences.bicycleType` | `bicycle.bicycle_type` |
-| `cycling_speed` | `preferences.speedKmh` bei `bike` | `bicycle.cycling_speed` |
+| `cycling_speed` | `preferences.speedKmh` for `bike` | `bicycle.cycling_speed` |
 | `use_roads` | `preferences.roadPreference` | `bicycle.use_roads` |
 | `avoid_bad_surfaces` | `preferences.avoidBadSurfaces` | `bicycle.avoid_bad_surfaces` |
 | `fixed_speed` | `preferences.fixedSpeedKmh` | `auto.fixed_speed` |
@@ -1397,9 +1397,9 @@ Mapping aus aktuellen Wanderer-Optionen:
 | `width` | `preferences.vehicleWidthM` | `auto.width` |
 | `height` | `preferences.vehicleHeightM` | `auto.height` |
 | `shortest` | `preferences.shortest` | `shortest` in `costing_options` |
-| Advanced Valhalla Costing Options | Valhalla-Profil/Config oder `native_config` | native `costing_options` |
+| Advanced Valhalla costing options | Valhalla profile/config or `native_config` | native `costing_options` |
 
-Das initiale Valhalla-Plugin kann eingebaute Profile anbieten:
+The initial Valhalla plugin can offer built-in profiles:
 
 - `pedestrian`
 - `hiking`
@@ -1407,44 +1407,44 @@ Das initiale Valhalla-Plugin kann eingebaute Profile anbieten:
 - `mountain_bike`
 - `auto`
 
-Das Plugin übersetzt jedes Profil in Valhalla `costing` und `costing_options`. Bestehende Advanced-UI-Controls können entweder zunächst als Valhalla-spezifische Profileinstellungen erhalten bleiben oder hinter generischen Preferences vereinfacht werden. Die wichtige Architekturänderung ist: Der generische Route-Editor importiert keine Valhalla-Response-Typen mehr.
+The plugin translates each profile into Valhalla `costing` and `costing_options`. Existing advanced UI controls can either stay initially as Valhalla-specific profile settings or be simplified behind generic preferences. The important architectural change is: the generic route editor no longer imports Valhalla response types.
 
-Migrationsschritte:
+Migration steps:
 
-1. Neue Host-API für Routing, Elevation, Engines, Profile, Settings und Mappings einführen.
-2. Valhalla als First-Party-Routing-Plugin mit `route.v1` und `elevation.v1` registrieren.
-3. Bestehende Valhalla-Defaults in `routing_settings`, `routing_profile_mappings` und `native_config` überführen.
-4. Alte `/api/v1/valhalla/route`- und `/api/v1/valhalla/height`-Endpunkte entfernen.
-5. Frontend vollständig von `valhalla_*` auf `routing_*` umbenennen.
-6. `GPX.correctElevation()` und Route-Editing ausschließlich über die generische Routing-/Elevation-API führen.
+1. Introduce the new host API for routing, elevation, engines, profiles, settings, and mappings.
+2. Register Valhalla as a first-party routing plugin with `route.v1` and `elevation.v1`.
+3. Move existing Valhalla defaults into `routing_settings`, `routing_profile_mappings`, and `native_config`.
+4. Remove the old `/api/v1/valhalla/route` and `/api/v1/valhalla/height` endpoints.
+5. Rename the frontend fully from `valhalla_*` to `routing_*`.
+6. Route `GPX.correctElevation()` and route editing exclusively through the generic routing/elevation API.
 
-Es wird kein Kompatibilitätsadapter für die alten Valhalla-Endpunkte gebaut. Der Migrationsdefault für `modeOfTransport: "pedestrian"` ist der Wanderer- Intent `hike`, weil der Trail-Editor primär Outdoor-/Wanderplanung abbildet und bestehende Optionen wie `max_hiking_difficulty` diese Semantik bereits nahelegen.
+No compatibility adapter is built for the old Valhalla endpoints. The migration default for `modeOfTransport: "pedestrian"` is the Wanderer intent `hike`, because the trail editor primarily models outdoor/hiking planning and existing options such as `max_hiking_difficulty` already suggest this semantics.
 
-## Frontend-Migration
+## Frontend migration
 
-Das Frontend wird auf generische Routing-Begriffe umbenannt:
+The frontend is renamed to generic routing terms:
 
-- `valhalla_store` wird `routing_store`.
-- `ValhallaAnchor` wird `RoutingAnchor`.
-- `valhalla_anchor_util` wird zu einem generischen Anchor-/Routing-Utility.
-- `web/src/lib/models/valhalla.ts` wird durch generische Routing-Modelle plus provider-spezifische Advanced-Typen ersetzt.
-- `/api/v1/valhalla/route`-Calls werden `/api/v1/plugins/routing/route`.
-- `/api/v1/valhalla/height`-Calls werden `/api/v1/plugins/routing/elevation`.
-- `GPX.correctElevation()` akzeptiert optional eine Provider-Auswahl und ruft den generischen Elevation-Endpunkt auf.
+- `valhalla_store` becomes `routing_store`.
+- `ValhallaAnchor` becomes `RoutingAnchor`.
+- `valhalla_anchor_util` becomes a generic anchor/routing utility.
+- `web/src/lib/models/valhalla.ts` is replaced by generic routing models plus provider-specific advanced types.
+- `/api/v1/valhalla/route` calls become `/api/v1/plugins/routing/route`.
+- `/api/v1/valhalla/height` calls become `/api/v1/plugins/routing/elevation`.
+- `GPX.correctElevation()` optionally accepts a provider selection and calls the generic elevation endpoint.
 
-Der Route-Editor sollte initial dieselbe Editing-Erfahrung rendern. Engine-Auswahl kann als kompakte Einstellung nahe den bestehenden Routing-Optionen eingeführt werden:
+The route editor should initially render the same editing experience. Engine selection can be introduced as a compact setting near the existing routing options:
 
-- primäre Routing-Engine;
-- Wanderer-Intent;
-- natives Routing-Profil oder Mapping;
-- Elevation-Engine;
-- optionale Aktion für Vergleich mehrerer Engines.
+- primary routing engine;
+- Wanderer intent;
+- native routing profile or mapping;
+- elevation engine;
+- optional action to compare multiple engines.
 
-### UI- und Editor-Vertrag
+### UI and editor contract
 
-Der Trail Editor spricht ausschließlich die Host-API. Er kennt keine Valhalla-, BRouter- oder GraphHopper-Requestformate. Provider-spezifische UI ist nur im Advanced-Bereich sichtbar.
+The trail editor speaks exclusively the host API. It knows no Valhalla, BRouter, or GraphHopper request formats. Provider-specific UI is visible only in the advanced area.
 
-Editor-State:
+Editor state:
 
 ```text
 routing_editor_state
@@ -1459,112 +1459,111 @@ routing_editor_state
   selected_candidate_id
 ```
 
-Semantik:
+Semantics:
 
-- `route_engine_mode` ist `single` oder `parallel`.
-- `intent` ist ein kanonischer Wanderer-Intent.
-- `desired_variants` ist die gewünschte finale Anzahl sichtbarer Kandidaten; der Host darf sie für kurze Segmente oder bei Limits effektiv reduzieren.
-- `selected_candidate_id` referenziert eine Host-generierte Candidate-ID aus der letzten Route-Response.
+- `route_engine_mode` is `single` or `parallel`.
+- `intent` is a canonical Wanderer intent.
+- `desired_variants` is the desired final number of visible candidates; the host may effectively reduce it for short segments or under limits.
+- `selected_candidate_id` references a host-generated candidate ID from the last route response.
 
-Standard-Controls im Editor:
+Standard controls in the editor:
 
-- Auto-Routing Toggle;
-- Intent-Auswahl;
-- Engine-Modus `single` oder `parallel`;
-- primäre Routing-Engine;
-- Vergleichs-Engines bei `parallel`;
-- Elevation-Engine;
-- gewünschte Variantenanzahl;
-- explizite Vergleichsaktion oder automatische Vergleichsanfrage, wenn Host- Policy und Segmentlänge Varianten sinnvoll erscheinen lassen;
-- mode-/intent-abhängige Preferences;
-- Kandidatenliste oder Kartenvergleich, wenn mehr als ein Kandidat zurückkommt.
+- auto-routing toggle;
+- intent selection;
+- engine mode `single` or `parallel`;
+- primary routing engine;
+- comparison engines for `parallel`;
+- elevation engine;
+- desired variant count;
+- explicit comparison action or automatic comparison request when host policy and segment length make variants seem worthwhile;
+- mode-/intent-dependent preferences;
+- candidate list or map comparison when more than one candidate is returned.
 
-Der Host liefert effektive UI-Metadaten für die aktuelle Auswahl aus Intent und Engines. Das Frontend muss Discovery mehrerer Engines nicht selbst zu vergleichbaren Controls verrechnen. Raw Discovery bleibt über `GET /api/v1/plugins/routing/engines` verfügbar; effektive Controls können über Settings oder einen Resolver-Endpunkt bereitgestellt werden.
+The host provides effective UI metadata for the current selection of intent and engines. The frontend does not need to compute comparable controls from multiple engines' discovery itself. Raw discovery stays available via `GET /api/v1/plugins/routing/engines`; effective controls can be provided via settings or a resolver endpoint.
 
-Preference-Anzeige:
+Preference display:
 
-| Support | Standard-UI |
+| Support | Standard UI |
 | --- | --- |
-| `full` | Normal anzeigen. |
-| `partial` | Anzeigen, aber mit Hinweis oder Warning. |
-| `template` | Anzeigen, wenn Template-Generierung für diesen Provider aktiv ist. |
-| `advanced` | Nur im Advanced-Bereich anzeigen. |
-| `unsupported` | Ausblenden. |
+| `full` | Show normally. |
+| `partial` | Show, but with a hint or warning. |
+| `template` | Show if template generation is active for this provider. |
+| `advanced` | Show only in the advanced area. |
+| `unsupported` | Hide. |
 
-Bei Parallel-Routing zeigt die Standard-UI nur Preferences, die alle ausgewählten Engines mindestens `partial` unterstützen. Wenn eine Engine `advanced` oder `unsupported` meldet, ist der Regler für den Parallelvergleich nicht vergleichbar und wird ausgeblendet oder entsprechend markiert. `requiredPreferences` dürfen bei Parallel-Routing nicht ignoriert werden.
+In parallel routing, the standard UI shows only preferences that all selected engines support at least `partial`. If an engine reports `advanced` or `unsupported`, the slider is not comparable for the parallel comparison and is hidden or marked accordingly. `requiredPreferences` must not be ignored in parallel routing.
 
-Kandidatenanzeige:
+Candidate display:
 
-- `candidates` aus der Host-Response ist bereits final kuratiert.
-- Die UI sortiert Kandidaten nicht nach provider-eigenen Scores neu.
-- Die UI zeigt Label, Provider/Profil, Distanz, Dauer, Höhengewinn/-verlust, Warnings und Elevation-Status.
-- Akzeptieren eines Kandidaten materialisiert dessen `segments` als GPX- `trkseg`.
+- `candidates` from the host response is already finally curated.
+- The UI does not re-sort candidates by provider-specific scores.
+- The UI shows label, provider/profile, distance, duration, elevation gain/loss, warnings, and elevation status.
+- Accepting a candidate materializes its `segments` as GPX `trkseg`.
 
-Manuelle Luftlinie bleibt host- oder frontend-nativ und ist kein Routing-Plugin. Elevation kann trotzdem über die ausgewählte Elevation-Engine korrigiert werden.
+A manual straight line stays host- or frontend-native and is not a routing plugin. Elevation can still be corrected via the selected elevation engine.
 
 Advanced UI:
 
-- native Profilwahl;
-- User-Upload, z.B. BRouter-`.brf`;
-- `native_config` und Valhalla Advanced Costing Options;
-- plugin-spezifische Controls, klar getrennt von Standard-Wanderer- Preferences.
+- native profile selection;
+- user upload, e.g. BRouter `.brf`;
+- `native_config` and Valhalla advanced costing options;
+- plugin-specific controls, clearly separated from standard Wanderer preferences.
 
-## Sicherheit und Limits
+## Security and limits
 
-Routing-Plugins nutzen dasselbe Trust-Modell wie andere Plugin-Typen. Die folgenden Werte sind initiale Host-Defaults und durch Admin-Konfiguration anpassbar. Plugins dürfen diese Limits nicht selbst erhöhen.
+Routing plugins use the same trust model as other plugin types. The following values are initial host defaults and adjustable via admin configuration. Plugins must not raise these limits themselves.
 
-Host-erzwungene Limits:
+Host-enforced limits:
 
-| Limit | Initialer Default |
+| Limit | Initial default |
 | --- | --- |
-| Anchors pro Request | `2..100` |
-| Engines pro Parallel-Request | `1..5` |
+| Anchors per request | `2..100` |
+| Engines per parallel request | `1..5` |
 | `desiredVariants` | `1..5` |
-| Native Alternativen pro Engine | max. `min(plugin.maxAlternatives, 5)` |
-| Decodierte Punkte pro Kandidat | max. `20000` |
-| Decodierte Punkte pro Host-Response | max. `50000` |
-| Profil-Upload-Größe | max. `64 KiB` |
-| Provider-Response-Body | max. `4 MiB` |
-| Plugin-Invocation-Timeout `route.v1` | `8000ms` |
-| Plugin-Invocation-Timeout `elevation.v1` | `8000ms` |
-| Gesamt-Orchestrierungs-Timeout | `15000ms` |
+| Native alternatives per engine | max. `min(plugin.maxAlternatives, 5)` |
+| Decoded points per candidate | max. `20000` |
+| Decoded points per host response | max. `50000` |
+| Profile upload size | max. `64 KiB` |
+| Provider response body | max. `4 MiB` |
+| Plugin invocation timeout `route.v1` | `8000ms` |
+| Plugin invocation timeout `elevation.v1` | `8000ms` |
+| Total orchestration timeout | `15000ms` |
 
-Connector-Policy:
+Connector policy:
 
-- Plugins dürfen keine freien Provider-URLs aufrufen.
-- Netzwerkzugriff ist nur über deklarierte Connectors erlaubt.
-- Connector-Config setzt `baseURL`, `allowedPathPrefixes`, TLS-, Redirect- und Private-Network-Policy.
-- Credentials und sensitive Headers werden vom Host angebracht, nicht vom Plugin.
-- Private Network ist standardmäßig verboten.
-- Redirects sind nur innerhalb erlaubter Host- und Path-Policy zulässig.
+- Plugins must not call arbitrary provider URLs.
+- Network access is allowed only via declared connectors.
+- Connector config sets `baseURL`, `allowedPathPrefixes`, and TLS, redirect, and private-network policy.
+- Credentials and sensitive headers are attached by the host, not by the plugin.
+- Private network is forbidden by default.
+- Redirects are allowed only within the permitted host and path policy.
 
-Rate-Limits gelten pro User und Plugin-Instanz. Initiale Defaults:
+Rate limits apply per user and plugin instance. Initial defaults:
 
-| Limit | Initialer Default |
+| Limit | Initial default |
 | --- | --- |
-| Route-Requests | `30/min` pro User und Instanz |
-| Elevation-Requests | `60/min` pro User und Instanz |
-| Parallel laufende Routing-Requests | `3` pro User |
-| Öffentliche Default-Instanzen | konservativer, z.B. `10 route/min` pro User |
+| Route requests | `30/min` per user and instance |
+| Elevation requests | `60/min` per user and instance |
+| Concurrent routing requests | `3` per user |
+| Public default instances | more conservative, e.g. `10 route/min` per user |
 
-Profil-Uploads brauchen besondere Sorgfalt:
+Profile uploads need special care:
 
-- Extension und Content-Type müssen zu `nativeProfileUpload` passen.
-- Max Bytes kommen aus Plugin-Metadata, dürfen aber das Host-Limit `64 KiB` nicht überschreiten.
-- Dateinamen haben keine Pfadsemantik.
-- Profilinhalt wird vom Host nicht als ausführbarer Code interpretiert.
-- Profile werden geschützt gespeichert.
-- Das Plugin erhält Profilinhalt nur für die konkrete Invocation.
+- Extension and content type must match `nativeProfileUpload`.
+- Max bytes come from plugin metadata but must not exceed the host limit `64 KiB`.
+- File names have no path semantics.
+- Profile content is not interpreted by the host as executable code.
+- Profiles are stored protected.
+- The plugin receives profile content only for the concrete invocation.
 
-Policy-Verstöße nutzen die bestehenden Fehlercodes:
+Policy violations use the existing error codes:
 
-| Situation | Fehlercode |
+| Situation | Error code |
 | --- | --- |
-| Connector, Pfad oder Netzwerkziel nicht erlaubt | `connector_denied` |
-| Provider- oder Plugin-Response zu groß | `response_too_large` |
-| Kandidat verletzt Punkt-, Segment- oder Geometrie-Limits | `candidate_policy_violation` |
-| User, Instanz oder Provider limitiert | `provider_rate_limited` |
-| Profil-Upload oder generiertes Profil ist ungültig | `profile_invalid` |
+| Connector, path, or network target not allowed | `connector_denied` |
+| Provider or plugin response too large | `response_too_large` |
+| Candidate violates point, segment, or geometry limits | `candidate_policy_violation` |
+| User, instance, or provider limited | `provider_rate_limited` |
+| Profile upload or generated profile is invalid | `profile_invalid` |
 
-Öffentliche Default-Instanzen wie `valhalla1.openstreetmap.de` unterliegen Fair-Use- und Rate-Limit-Erwartungen. Paralleles Routing und Varianten erhöhen die Anzahl der Provider-Requests. Der Host muss deshalb pro User, Plugin-Instanz und Provider konservative Defaults erzwingen können.
-
+Public default instances such as `valhalla1.openstreetmap.de` are subject to fair-use and rate-limit expectations. Parallel routing and variants increase the number of provider requests. The host must therefore be able to enforce conservative defaults per user, plugin instance, and provider.

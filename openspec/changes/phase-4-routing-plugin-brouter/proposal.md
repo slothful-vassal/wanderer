@@ -1,6 +1,6 @@
 # Change: routing-plugin-brouter
 
-> **Phase 4 von 5** · hängt ab von: Phase 3 · BRouter als zweite Engine: Single-Engine-Routing + separate Elevation-Engine, native/`.brf`-Profile.
+> **Phase 4 of 5** · depends on: Phase 3 · BRouter as the second engine: single-engine routing + separate elevation engine, native/`.brf` profiles.
 
 ## Why
 

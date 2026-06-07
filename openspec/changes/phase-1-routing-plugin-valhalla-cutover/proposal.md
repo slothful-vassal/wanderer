@@ -1,6 +1,6 @@
 # Change: routing-plugin-valhalla-cutover
 
-> **Phase 1 von 5** · hängt ab von: – · Valhalla-Cutover: harte Ablösung der `/api/v1/valhalla/*`-Endpunkte und Frontend-Umbenennung auf generisches Routing.
+> **Phase 1 of 5** · depends on: – · Valhalla cutover: hard removal of the `/api/v1/valhalla/*` endpoints and frontend rename to generic routing.
 
 ## Why
 

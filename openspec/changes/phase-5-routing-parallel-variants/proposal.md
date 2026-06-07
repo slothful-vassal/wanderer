@@ -1,6 +1,6 @@
 # Change: routing-parallel-variants
 
-> **Phase 5 von 5** · hängt ab von: Phase 4 (≥2 Engines nötig) · Paralleler Fan-out + Varianten-Kuratierung für denselben Intent.
+> **Phase 5 of 5** · depends on: Phase 4 (needs ≥2 engines) · Parallel fan-out + variant curation for the same intent.
 
 ## Why
 

@@ -1,6 +1,6 @@
 # Change: routing-host-contracts
 
-> **Phase 2 von 5** · hängt ab von: Phase 1 · Härtung der Host-Verträge: HTTP-Status, Fehlercodes, Limits, Elevation-Status, Segment-/Polyline-Conformance + Tests.
+> **Phase 2 of 5** · depends on: Phase 1 · Harden the host contracts: HTTP status, error codes, limits, elevation status, segment/polyline conformance + tests.
 
 ## Why
 
