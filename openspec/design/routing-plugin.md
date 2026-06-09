@@ -26,7 +26,7 @@ For concept validation, GraphHopper is kept in mind as a third reference case. G
 - `route.v1` and `elevation.v1` are independent capabilities. Routing and elevation can come from different plugins.
 - Users can create their own routing profiles, including provider-specific profile files such as BRouter `.brf`.
 - Multiple routing engines can be active for the same user. A user or admin defines a primary routing engine for the default single-route path; additional engines may be selected for comparison, variants, elevation, or advanced workflows.
-- Because the editor is segment-oriented, the host may compose an accepted route from segment candidates produced by different engines, as long as composition happens only at existing anchor boundaries and all segments share the same canonical intent.
+- Because the editor is segment-oriented, the host may compose an accepted route from segment candidates produced by different engines in `segment` routing mode, as long as composition happens only at existing anchor boundaries and all segments share the same canonical intent. `via` candidates are atomic per engine and are not cross-engine composed, even though accepting them still materializes editor segments.
 
 ## Permanent boundaries
 
@@ -171,14 +171,13 @@ The host sends normalized, already-resolved routing input to the selected plugin
       "nativeConfig": {}
     },
     "preferences": {
-      "speedKmh": 18,
+      "speedPreference": 0.5,
       "hillPreference": 0.5
     },
     "requiredPreferences": [],
     "options": {
       "alternatives": 3,
-      "includeElevation": false,
-      "language": "de"
+      "includeElevation": false
     }
   }
 }
@@ -463,7 +462,7 @@ Suggested standard intents:
 | `scooter` | `motor` | Scooter / moped | Valhalla `motor_scooter`; BRouter `moped`. |
 | `motorcycle` | `motor` | Motorcycle | Valhalla `motorcycle`; BRouter custom/native profile if available. |
 
-`run` deliberately overlaps with `walk` plus a higher `speedKmh`. The dedicated intent is meant as a UI shortcut and a semantic user intent: running can get more direct paths, different comfort assumptions, and different default speeds without standard users having to tune a walking profile manually.
+`run` deliberately overlaps with `walk` plus a faster `speedPreference`. The dedicated intent is meant as a UI shortcut and a semantic user intent: running can get more direct paths, different comfort assumptions, and different default speeds without standard users having to tune a walking profile manually.
 
 ### Canonical routing preferences
 
@@ -480,30 +479,31 @@ Generic preferences should deliberately stay small:
 | Preference | Type | Modes | Meaning |
 | --- | --- | --- | --- |
 | `shortest` | boolean | all | Weight a shorter distance more heavily than comfort, speed, or quality. |
-| `speedKmh` | number | `foot`, `bike` | Assumed travel/movement speed for duration and cost model. |
+| `speedPreference` | number `0..1` | `foot`, `bike`, `motor` | Relative speed preference: `0` slow/relaxed, `0.5` neutral, `1` fast. The plugin interprets the range intent-/profile-dependently. |
 | `hillPreference` | number `0..1` | `foot`, `bike` | `0` strongly avoids climbs, `0.5` is neutral, `1` accepts or prefers hilly ways more. |
 | `maxHikingDifficulty` | enum or number | `foot` | Maximum accepted hiking/SAC difficulty. |
 | `bicycleType` | enum | `bike` | Bicycle type, e.g. `road`, `hybrid`, `city`, `cross`, `mountain`. |
 | `roadPreference` | number `0..1` | `bike` | `0` avoids roads more, `1` uses roads more. |
 | `avoidBadSurfaces` | number `0..1` | `bike` | Higher values avoid bad or unknown surfaces more strongly. |
-| `fixedSpeedKmh` | number | `motor` | Fixed speed for the time/cost model, independent of road types. |
 | `topSpeedKmh` | number | `motor` | Maximum vehicle speed. |
 | `vehicleWidthM` | number | `motor` | Vehicle width for routing with width restrictions. |
 | `vehicleHeightM` | number | `motor` | Vehicle height for routing with height restrictions. |
+
+Concrete km/h values such as Valhalla `walking_speed`, `cycling_speed`, or `fixed_speed` are provider-native units. The standard UI should expose the relative `speedPreference`; plugins map it to concrete speed ranges according to the resolved intent and native profile. Engines that need exact speeds can expose them in the provider-native advanced section.
 
 This list covers the current editor options:
 
 | Current mode | Current option | Canonical preference |
 | --- | --- | --- |
-| Car | fixed speed | `fixedSpeedKmh` |
+| Car | fixed speed | `speedPreference` |
 | Car | top speed | `topSpeedKmh` |
 | Car | vehicle width | `vehicleWidthM` |
 | Car | vehicle height | `vehicleHeightM` |
-| Hiking | walking speed | `speedKmh` |
+| Hiking | walking speed | `speedPreference` |
 | Hiking | include hills | `hillPreference` |
 | Hiking | maximum hiking difficulty | `maxHikingDifficulty` |
 | Cycling | bicycle type | `bicycleType` |
-| Cycling | cycling speed | `speedKmh` |
+| Cycling | cycling speed | `speedPreference` |
 | Cycling | include hills | `hillPreference` |
 | Cycling | use roads | `roadPreference` |
 | Cycling | avoid bad surfaces | `avoidBadSurfaces` |
@@ -514,13 +514,12 @@ Suggested provider mappings:
 | Preference | Valhalla | BRouter | GraphHopper |
 | --- | --- | --- | --- |
 | `shortest` | `shortest` in `costing_options`. | Own profile or `.brf` template with stronger distance weighting; possibly native `shortest` for foot. | Shorter route via custom model / weighting or an alternative profile, if supported. |
-| `speedKmh` | `walking_speed` for `pedestrian`, `cycling_speed` for `bicycle`. | Dynamic `.brf` from a template; depending on the profile via variables such as `maxSpeed`, `bikerPower`, `totalMass`, or custom time costs. | Custom model can influence speeds; simple duration assumptions possibly host-side or provider-specific. |
+| `speedPreference` | Maps to `walking_speed`, `cycling_speed`, or `auto.fixed_speed` using intent-/profile-specific ranges. | Dynamic `.brf` from a template; depending on the profile via variables such as `maxSpeed`, `bikerPower`, `totalMass`, `vmax`, or custom time costs. | Custom model can influence speed/cost; exact mapping is profile/server specific. |
 | `hillPreference` | `use_hills` for `pedestrian` and `bicycle`. | `.brf` template via `consider_elevation`, `uphillcost`, `downhillcost`, and cutoff values. | Custom model with elevation/grade data, provided the profile/server exposes those encoded values. |
 | `maxHikingDifficulty` | `max_hiking_difficulty` in the `pedestrian` costing. | `.brf` template via `SAC_scale_limit` and `SAC_scale_preferred`. | `hike` profile or custom model, provided SAC-/trail-difficulty data is available. |
 | `bicycleType` | `bicycle_type`: `Road`, `Hybrid`, `City`, `Cross`, `Mountain`. | Selection of a native profile such as `fastbike`, `trekking`, `gravel`, `mtb`, or a matching `.brf` template. | Profile selection such as `bike`, `racingbike`, `mtb` plus custom model. |
 | `roadPreference` | `use_roads` in the `bicycle` costing. | `.brf` template with adjusted costs for road classes, cycleways, tracks, and traffic variables. | Custom model via road-class/road-environment rules. |
 | `avoidBadSurfaces` | `avoid_bad_surfaces` in the `bicycle` costing. | `.brf` template with surface/smoothness costs. | Custom model via `surface`, `smoothness`, or comparable encoded values. |
-| `fixedSpeedKmh` | `fixed_speed` in the `auto` costing. | Possible via a car `.brf` template and custom time/cost computation; not guaranteed as a universal built-in. | Custom model or provider-specific profile, depending on the server profile. |
 | `topSpeedKmh` | `top_speed` in the `auto` costing. | Car profiles such as `car-vario` can express speed via variables such as `vmax`. | Custom model can cap speed if the profile allows it. |
 | `vehicleWidthM` | `width` in the `auto`/vehicle-related costing. | Only possible if data and the `.brf` profile explicitly evaluate width restrictions; no guaranteed standard. | Rather a truck/vehicle profile or custom model, depending on enabled encoded values. |
 | `vehicleHeightM` | `height` in the `auto`/vehicle-related costing. | Only possible if data and the `.brf` profile explicitly evaluate height restrictions; no guaranteed standard. | Rather a truck/vehicle profile or custom model, depending on enabled encoded values. |
@@ -594,11 +593,11 @@ Suggested metadata structure:
           "defaultProfile": "trekking",
           "nativeProfiles": ["trekking", "trekking-noferries", "trekking-nosteps"],
           "preferences": {
-            "speedKmh": {
+            "speedPreference": {
               "support": "template",
-              "min": 3,
-              "max": 45,
-              "default": 18
+              "min": 0,
+              "max": 1,
+              "default": 0.5
             },
             "hillPreference": {
               "support": "template",
@@ -629,11 +628,11 @@ Suggested metadata structure:
           "defaultProfile": "fastbike",
           "nativeProfiles": ["fastbike", "fastbike-lowtraffic", "fastbike-verylowtraffic"],
           "preferences": {
-            "speedKmh": {
+            "speedPreference": {
               "support": "template",
-              "min": 3,
-              "max": 60,
-              "default": 25
+              "min": 0,
+              "max": 1,
+              "default": 0.7
             },
             "roadPreference": {
               "support": "template",
@@ -690,7 +689,7 @@ Field semantics:
 | `nativeProfileUpload` | Upload contract for provider-native profile files. |
 | `nativeControlDiscovery` | Describes whether the plugin can expose provider-/profile-specific advanced controls. |
 
-`preferences` describes, per intent, which canonical Wanderer preferences the plugin can meaningfully process. The host uses this data to show UI sliders, check parallel comparison, and classify `unsupported_preference` correctly as a warning or an error.
+`preferences` describes, per intent, which canonical Wanderer preferences the plugin can meaningfully process. The host uses this data to show UI sliders, check multi-engine comparability, and classify `unsupported_preference` correctly as a warning or an error.
 
 Support values:
 
@@ -708,7 +707,7 @@ For Valhalla, `nativeProfileUpload.enabled` would be `false`; advanced users wou
 
 ### Provider-native advanced controls
 
-Canonical Wanderer preferences are intentionally small and comparable. They are not meant to expose every provider knob. In addition, a routing plugin may expose provider-native advanced controls for the currently selected engine and native profile. These controls are engine-specific, profile-specific, and not comparable across providers.
+Canonical Wanderer preferences are intentionally small and comparable. They are not meant to expose every provider knob. In addition, a routing plugin may expose provider-native advanced controls for the currently selected engine and native profile. These controls are engine-specific and profile-specific. They are not part of Wanderer's cross-provider comparability contract and are never synchronized across providers. If a provider-native option should become comparable, it must first be modeled as a canonical Wanderer preference.
 
 Advanced controls are discovered, rendered, and stored separately from canonical preferences:
 
@@ -827,12 +826,12 @@ Response:
   "mode": "bike",
   "controls": [
     {
-      "key": "speedKmh",
+      "key": "speedPreference",
       "type": "number",
       "ui": "slider",
-      "min": 3,
-      "max": 60,
-      "default": 20,
+      "min": 0,
+      "max": 1,
+      "default": 0.5,
       "support": "partial",
       "comparable": true
     },
@@ -983,12 +982,12 @@ The route endpoint supports single-engine and multi-engine calls:
   ],
   "options": {
     "includeElevation": true,
-    "desiredVariants": 3
+    "desiredVariants": 1
   }
 }
 ```
 
-For parallel suggestions:
+For explicitly requested parallel suggestions:
 
 ```json
 {
@@ -1094,7 +1093,7 @@ Round-trip is captured here as an anticipated capability so the contract anticip
     { "lat": 47.3850, "lon": 8.5600 }
   ],
   "preferences": {
-    "speedKmh": 18,
+    "speedPreference": 0.5,
     "hillPreference": 0.5,
     "roadPreference": 0.5,
     "avoidBadSurfaces": 0.25,
@@ -1103,9 +1102,8 @@ Round-trip is captured here as an anticipated capability so the contract anticip
   "requiredPreferences": [],
   "options": {
     "includeElevation": true,
-    "desiredVariants": 3,
-    "routingMode": "segment",
-    "language": "de"
+    "desiredVariants": 1,
+    "routingMode": "segment"
   }
 }
 ```
@@ -1123,16 +1121,15 @@ Required fields:
 | `preferences` | no | Canonical tuning options. |
 | `requiredPreferences` | no | Preferences that must not be ignored. |
 | `elevation` | no | Desired elevation engine; otherwise user default or no elevation. |
-| `options` | no | Host options for variants, language, and elevation. |
+| `options` | no | Host options for variants, routing mode, and elevation. |
 
 Defaults:
 
 | Field | Default |
 | --- | --- |
 | `options.includeElevation` | `true`, because current behavior backfills heights and elevation gain/loss is relevant for candidate selection. |
-| `options.desiredVariants` | User setting `default_variant_count`, otherwise `1`. |
+| `options.desiredVariants` | `1` for the normal editor routing flow. User setting `default_variant_count` pre-fills explicit variant actions, otherwise `1`. |
 | `options.routingMode` | Effective routing mode for this request. Defaults are resolved from `default_routing_mode`; an automatic fallback from `via` to `segment` is allowed only for default resolution and emits `routing_mode_fallback`. An explicit user request for `via` must fail or be confirmed by the UI before retrying as `segment` when no selected via-capable engine can answer. |
-| `options.language` | User or browser language, otherwise `en`. |
 | `preferences` | Intent/profile defaults from mapping and plugin discovery. |
 | `requiredPreferences` | `[]`. |
 | `elevation` | User default `elevation_instance`, if set. |
@@ -1150,7 +1147,9 @@ Initial limits:
 
 Parallel requests have partial-failure semantics. The host returns successful candidates from engines that completed and appends structured per-engine errors for failed engines. Timeout, rate limit, missing mapping, invalid profile, or a temporary provider outage must not discard valid candidates from other engines. A full request failure occurs only when no selected engine can deliver a usable candidate or the request itself is invalid.
 
-`desiredVariants` applies regardless of mode. In single-engine mode the host translates the desired final variant count into a provider-specific alternatives request to that one engine. In parallel mode it combines alternatives within one engine with multiple engines for the same intent. When aggregating, the host must namespace candidates uniquely, e.g. via `pluginId`, `instanceId`, `profileKey`, and the native candidate ID. Two plugins may both return `"primary"` internally; in the frontend response this must become a stable, host-unique candidate ID.
+Variant discovery is opt-in. A normal editor route request uses the primary route engine, `routing.mode: "single"`, and `desiredVariants: 1`; the host must not request native alternatives or fan out to additional engines only because multiple engines are configured. The user must explicitly ask for variants or call the broader `route-candidates` endpoint to receive more than one candidate. `default_variant_count` is a UI default for that explicit action, not an automatic trigger for every route calculation.
+
+`desiredVariants` applies regardless of mode once variants have been explicitly requested. In single-engine mode the host translates the desired final variant count into a provider-specific alternatives request to that one engine. In parallel mode it combines alternatives within one engine with multiple engines for the same intent. When aggregating, the host must namespace candidates uniquely, e.g. via `pluginId`, `instanceId`, `profileKey`, and the native candidate ID. Two plugins may both return `"primary"` internally; in the frontend response this must become a stable, host-unique candidate ID.
 
 In `segment` routing mode, `desiredVariants` applies per anchor-pair segment first. The host may show or curate whole-route previews from selected segment choices, but the primary choice unit remains the segment. In `via` routing mode, `desiredVariants` applies to full-route candidates returned by one engine for the ordered anchor list.
 
@@ -1506,13 +1505,13 @@ Resolution is field-specific:
 | Feature gates such as `exposed_features` | Admin/builtin define the maximum available feature set. A user may opt into or out of features only within that allowed set and cannot re-enable a feature hidden by admin policy. |
 | Provider-native/default advanced config maps | Deep-merge only inside the resolved engine/profile context and only for supported controls. Unsupported or hidden controls are ignored or rejected by policy. |
 
-`compare_instances` stores the engines the editor uses for parallel suggestions. `elevation_instance` may be empty; the host then, depending on the request, keeps provider heights, keeps existing GPX heights, or returns geometry without heights. `default_variant_count` is the default number of visible route suggestions the editor adopts into `options.desiredVariants`; the product default is `1`.
+`compare_instances` stores the engines the editor may use for multi-engine variant suggestions. `elevation_instance` may be empty; the host then, depending on the request, keeps provider heights, keeps existing GPX heights, or returns geometry without heights. `default_variant_count` is the default number of visible route suggestions used when the user explicitly opens variants; the product default is `1`. Normal editor routing still sends `desiredVariants: 1`.
 
 `route_category_intent_defaults` maps the instance's actual Wanderer trail category records to initial routing intents. The key should be the category identity, preferably category id; category name can be used only as a migration or seed helper when ids are not yet available. Built-in seed suggestions may map existing standard category records such as `Hiking -> hike`, `Walking -> walk`, and `Biking -> bike_balanced`; they apply only if those category records exist in the instance. Standard categories without meaningful path/road routing, e.g. `Climbing`, `Skiing`, or `Canoeing`, should normally have no category mapping. If a category has no mapping, the editor falls back to `default_intent` or starts without auto-routing, depending on host/UI policy. Because categories are admin-configurable records, the effective map is primarily admin/user scoped and remains editable in settings. This mapping is used for trail creation and editing UI only: the selected intent remains visible and editable, and changing it for a trail does not change the category itself.
 
 `default_routing_mode` is `segment` or `via`. It is a preference, not a guarantee: the host resolves the effective mode at request time against the currently available via-capable engines (see "Routing mode"). It may store `via` even when no via-capable engine is currently enabled; the host may then fall back to `segment` because this is default resolution. This automatic fallback does not apply to an explicit per-request user choice of `via`.
 
-`exposed_features` lets an admin gate which optional features are offered instance-wide, e.g. engine selection, parallel comparison, via mode, profile uploads, provider-native advanced controls, and advanced candidate access via `route-candidates`. This serves both usability (keep the default surface small) and abuse control on public instances. A feature hidden by the admin cannot be enabled by a user; segment routing and the single-best-route default path are always available.
+`exposed_features` lets an admin gate which optional features are offered instance-wide, e.g. engine selection, multi-engine variants, via mode, profile uploads, provider-native advanced controls, and advanced candidate access via `route-candidates`. This serves both usability (keep the default surface small) and abuse control on public instances. A feature hidden by the admin cannot be enabled by a user; segment routing and the single-best-route default path are always available.
 
 `primary_route_profile` is deliberately not stored in user settings. The default runs via `default_intent` plus mapping resolution, so that settings are not directly coupled to provider-native profiles.
 
@@ -1707,14 +1706,14 @@ Mapping from current Wanderer options:
 | `modeOfTransport: "pedestrian"` | `mode: "foot"`, intent `hike` | `costing: "pedestrian"` with hiking preset |
 | `modeOfTransport: "bicycle"` | `mode: "bike"`, intent `bike_balanced` | `costing: "bicycle"` |
 | `modeOfTransport: "auto"` | `mode: "motor"`, intent `car` | `costing: "auto"` |
-| `walking_speed` | `preferences.speedKmh` for `foot` | `pedestrian.walking_speed` |
+| `walking_speed` | `preferences.speedPreference` for `foot`, mapped through the active intent/profile speed range | `pedestrian.walking_speed` |
 | `use_hills` | `preferences.hillPreference` for `foot`/`bike` | `pedestrian.use_hills` or `bicycle.use_hills` |
 | `max_hiking_difficulty` | `preferences.maxHikingDifficulty` | `pedestrian.max_hiking_difficulty` |
 | `bicycle_type` | `preferences.bicycleType` | `bicycle.bicycle_type` |
-| `cycling_speed` | `preferences.speedKmh` for `bike` | `bicycle.cycling_speed` |
+| `cycling_speed` | `preferences.speedPreference` for `bike`, mapped through the active intent/profile speed range | `bicycle.cycling_speed` |
 | `use_roads` | `preferences.roadPreference` | `bicycle.use_roads` |
 | `avoid_bad_surfaces` | `preferences.avoidBadSurfaces` | `bicycle.avoid_bad_surfaces` |
-| `fixed_speed` | `preferences.fixedSpeedKmh` | `auto.fixed_speed` |
+| `fixed_speed` | `preferences.speedPreference` for `motor`, mapped through the active intent/profile speed range | `auto.fixed_speed` |
 | `top_speed` | `preferences.topSpeedKmh` | `auto.top_speed` |
 | `width` | `preferences.vehicleWidthM` | `auto.width` |
 | `height` | `preferences.vehicleHeightM` | `auto.height` |
@@ -1760,13 +1759,13 @@ The route editor should initially render the same editing experience. Engine sel
 - Wanderer intent;
 - native routing profile or mapping;
 - elevation engine;
-- optional action to compare multiple engines.
+- optional action to show variants, which may use multiple engines.
 
 ### UI and editor contract
 
 The trail editor speaks exclusively the host API. It knows no Valhalla, BRouter, or GraphHopper request formats. Provider-specific UI is visible only in the advanced area.
 
-The default path is deliberately minimal and Komoot-like: for the active intent the user gets one best route, with no variant, comparison, or engine UI. The engine behind a route is not surfaced. Multi-candidate, engine selection, routing mode, and provider-native options are all opt-in.
+The default path is deliberately minimal and Komoot-like: for the active intent the user gets one best route, with no variant or engine UI. The engine behind a route is not surfaced. Multi-candidate, engine selection, routing mode, and provider-native options are all opt-in.
 
 Editor state:
 
@@ -1801,13 +1800,13 @@ Default controls (always visible):
 Opt-in / advanced controls (hidden until the user asks for them):
 
 - primary routing engine and elevation engine;
-- engine mode `single` or `parallel` and the comparison engines;
+- engine mode `single` or `parallel` and the engines used for variant discovery;
 - routing mode `segment` or `via`, shown only when at least one enabled engine supports via routing;
-- desired variant count and the explicit "show variants" / "compare" action;
+- desired variant count and the explicit "show variants" action;
 - native profiles, uploads, and provider-native advanced controls;
 - candidate list or map comparison, shown only once more than one candidate was explicitly requested.
 
-By default `desired_variants` is `1` and no variants are requested. Variants and parallel comparison run only on an explicit user action, never automatically as part of the default routing flow.
+By default `desired_variants` is `1` and no variants are requested. Variants, including multi-engine variants, run only on an explicit user action, never automatically as part of the default routing flow.
 
 The host provides effective UI metadata for the current selection of intent and engines. The frontend does not need to compute comparable controls from multiple engines' discovery itself. Raw discovery stays available via `GET /api/v1/plugins/routing/engines`; effective controls can be provided via settings or a resolver endpoint.
 
@@ -1821,7 +1820,7 @@ Preference display:
 | `advanced` | Show only in the advanced area. |
 | `unsupported` | Hide. |
 
-In parallel routing, the standard UI shows only preferences that all selected engines support at least `partial`. If an engine reports `advanced` or `unsupported`, the slider is not comparable for the parallel comparison and is hidden or marked accordingly. `requiredPreferences` must not be ignored in parallel routing.
+In parallel routing, the standard UI shows only preferences that all selected engines support at least `partial`. If an engine reports `advanced` or `unsupported`, the slider is not comparable for multi-engine variant curation and is hidden or marked accordingly. `requiredPreferences` must not be ignored in parallel routing.
 
 Candidate display:
 
@@ -1903,14 +1902,14 @@ Public default instances such as `valhalla1.openstreetmap.de` are subject to fai
 
 The `route-candidates` endpoint is an advanced/debug/programmatic surface and can amplify fan-out beyond the normal curated editor response. It should be disabled by default on public instances unless enabled by role or `exposed_features`, and it remains subject to stricter rate limits and candidate-count caps than the normal `route` endpoint.
 
-## Roadmap and open decisions
+## Future scope
 
 In scope for this project but deliberately deferred to keep the early phases focused. Each is designed to fit the existing contract as an optional, discovery-gated capability so it does not complicate the default path.
 
 - **Round-trip routing** (`supportsRoundTrip`): contract anticipated above; warrants its own change once at least one engine supports it. Competitiveness feature (loop generation).
 - **Avoid areas / exclusions**: a generic `avoidAreas` preference (polygon or edge), engine-support-gated. Valuable for serious planning but needs significant editor UI (drawing/managing areas), so deferred.
-- **Map-matching of imported routes**: a `match` capability that snaps an imported or freehand track onto the network so it becomes editable/routable. Open decision because it intentionally conflicts with the current "imported routes are inert" rule.
-- **Maneuver / turn instructions (cue sheet)**: optional candidate output for export/navigation prep. Low priority for a planner.
+- **Map-matching of imported routes**: a separate `match` capability that snaps an imported or freehand track onto the network so it becomes editable/routable. This is a later feature with its own contract and must explicitly opt a route out of the current "imported routes are inert" behavior.
+- **Maneuver / turn instructions (cue sheet)**: optional candidate output for export/navigation prep. A future maneuvers contract may reintroduce `language` for localized instruction text and provider warnings; it is intentionally not part of the current route geometry/default contract.
 - **Popularity / scenic routing**: primarily a data and preset concern (popularity data, tuned profiles), not an API gap. Ambition for the curated presets rather than a contract feature.
 
 Out of this project's scope (separate epics): global waypoint/highlight/POI management, an LLM-assisted chat planner (consumes the Phase 5 contract), and the mobile app (developed in parallel). Geocoding/place search for setting anchors already exists in Wanderer.

@@ -5,4 +5,5 @@ changes_dir: changes
 archive_dir: changes/archive
 notes:
   - Routing plugin planning is documented in openspec/design/routing-plugin.md (non-normative design reference).
+  - A shorter user-facing routing overview is documented in openspec/design/routing-plugin-user-summary.md.
   - Each routing phase should be implemented as a separate OSPX change.

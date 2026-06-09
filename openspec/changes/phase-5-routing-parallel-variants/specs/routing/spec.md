@@ -55,7 +55,7 @@ The system SHALL expose separate host endpoints for the curated human editor res
 - AND the normal curated `route` endpoint remains available.
 
 ### Requirement: Single best route by default
-The system SHALL return one best route by default and SHALL produce variants or parallel comparison only on explicit user request.
+The system SHALL return one best route by default and SHALL produce variants, including multi-engine variants, only on explicit user request.
 
 #### Scenario: Default request returns one route
 - GIVEN a user routes without requesting variants
@@ -64,8 +64,14 @@ The system SHALL return one best route by default and SHALL produce variants or 
 - AND the response contains a single best candidate
 - AND no parallel fan-out is performed.
 
+#### Scenario: Variant count setting does not auto-trigger variants
+- GIVEN the user setting `default_variant_count` is greater than `1`
+- WHEN the user routes without requesting variants
+- THEN the host still uses `desiredVariants: 1`
+- AND `default_variant_count` is used only to pre-fill explicit variant UI.
+
 #### Scenario: Variants only on explicit request
-- GIVEN a user explicitly asks for variants or engine comparison
+- GIVEN a user explicitly asks for variants
 - WHEN the host routes
 - THEN it may return up to `desiredVariants` candidates and fan out to multiple engines.
 

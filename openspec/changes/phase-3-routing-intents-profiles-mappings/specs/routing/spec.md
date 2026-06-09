@@ -121,11 +121,12 @@ The system SHALL resolve provider-native advanced controls for one concrete engi
 - THEN the host returns the control groups declared or derived by that plugin for that profile
 - AND marks each control with its storage target such as `native_config` or generated profile metadata.
 
-#### Scenario: Advanced controls are not comparable
+#### Scenario: Advanced controls are not comparable by default
 - GIVEN multiple engines are selected for parallel routing
 - WHEN the standard editor controls are resolved
 - THEN provider-native advanced controls are not merged across engines
-- AND are shown only inside the per-engine advanced section.
+- AND are shown only inside the per-engine advanced section
+- AND any provider-native option that should become comparable must first be modeled as a canonical Wanderer preference.
 
 ## REMOVED Requirements
 

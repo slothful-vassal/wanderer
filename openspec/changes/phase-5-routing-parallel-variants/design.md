@@ -8,7 +8,7 @@ Enable multi-engine and multi-variant routing for the same canonical Wanderer in
 
 - Parallel comparison is only defined within the same canonical intent key.
 - Mixed intents are not comparable parallel routing.
-- The default path returns one best route; `desiredVariants` defaults to `1`. Variants and parallel comparison are opt-in and run only on explicit user action, never automatically.
+- The default path returns one best route; `desiredVariants` defaults to `1`. Variants, including multi-engine variants, are opt-in and run only on explicit user action, never automatically.
 - `desiredVariants` is the final UI target count, not per-engine alternative count.
 - Candidates are presented engine-neutrally: the user need not know which engine produced a route; provider/profile provenance is internal.
 - Two consumers, different endpoints: `POST /api/v1/plugins/routing/route` returns the small finally-curated human UI response, while `POST /api/v1/plugins/routing/route-candidates` returns a broader but still bounded, host-normalized comparable candidate set for advanced, debug, or programmatic/agent consumers. Both use the same internal pipeline and plugin contracts; `route-candidates` is not a provider raw dump and is gated by role or `exposed_features` to avoid becoming a public fan-out amplifier. The chat layer itself is out of scope here.

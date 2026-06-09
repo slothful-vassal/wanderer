@@ -7,7 +7,7 @@ This directory contains OpenSpec/OSPX planning artifacts for wanderer.
 - `changes/archive/` is reserved for completed and archived changes.
 - `design/` holds internal design rationale and target narratives. These are not normative; on any conflict `specs/` and `changes/` win.
 
-The routing plugin target architecture is documented in `design/routing-plugin.md`. The active routing changes intentionally mirror the phases from that document. That design doc is a temporary reference and will be removed once the routing phases are implemented and manually validated.
+The routing plugin target architecture is documented in `design/routing-plugin.md`. A shorter user-facing overview of the same target state lives in `design/routing-plugin-user-summary.md`. The active routing changes intentionally mirror the phases from the architecture document. These design docs are temporary references and will be removed once the routing phases are implemented and manually validated.
 
 ## Routing phases
 
