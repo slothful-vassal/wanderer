@@ -20,5 +20,8 @@ Change names are prefixed with `phase-N-` so the phase is visible in the name it
 | 3 | `phase-3-routing-intents-profiles-mappings` | Phase 1 |
 | 4 | `phase-4-routing-plugin-brouter` | Phase 3 |
 | 5 | `phase-5-routing-parallel-variants` | Phase 4 (needs ≥2 engines) |
+| 6 (optional add-on) | `phase-6-routing-round-trip` | an engine with `supportsRoundTrip` (after Phase 4) |
+
+Phase 6 is an optional additive capability (round-trip / loop generation), not part of the linear 1–5 core sequence; it can land whenever a supporting engine is available.
 
 Note: `openspec list` defaults to recency order — use `openspec list --sort name` to see the phases in order.

@@ -46,6 +46,16 @@ The system SHALL include hard-coded phase-one defaults for `hike`, `bike_balance
 - THEN the Wanderer intent is `car`
 - AND Valhalla uses `auto` costing.
 
+### Requirement: Valhalla native advanced controls
+The system SHALL expose Valhalla provider-native costing options as per-profile advanced controls during the cutover.
+
+#### Scenario: Valhalla advanced controls
+- GIVEN a user opens advanced settings for a Valhalla routing profile
+- WHEN the frontend requests native controls
+- THEN the host returns Valhalla costing/control fields for that profile
+- AND submitted values are stored as Valhalla `native_config`
+- AND these controls remain separate from standard Wanderer preferences.
+
 ### Requirement: Phase-one segment and polyline compatibility
 The system SHALL enforce the routing segment contract and canonical polyline convention during the Valhalla cutover.
 
@@ -53,7 +63,7 @@ The system SHALL enforce the routing segment contract and canonical polyline con
 - GIVEN a route request with adjacent anchor pairs
 - WHEN Valhalla returns a route candidate
 - THEN the host returns one segment per adjacent anchor pair
-- AND each segment has geometry or a valid shape range.
+- AND each segment has its own geometry.
 
 #### Scenario: Canonical encoded polyline
 - GIVEN a route candidate includes encoded geometry

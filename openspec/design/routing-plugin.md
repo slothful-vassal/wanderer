@@ -17,20 +17,21 @@ Valhalla and BRouter are both intended to be first-party routing plugins. Valhal
 
 For concept validation, GraphHopper is kept in mind as a third reference case. GraphHopper is not the primary implementation focus, but it helps validate the abstraction against another open routing engine: predefined profiles, custom models, alternative routes, elevation, and a server-side HTTP API are shaped differently there than in Valhalla and BRouter.
 
-## Load-bearing decisions
+## Key decisions
 
 - The canonical Wanderer intent is the shared routing language and the authoritative comparison key. Comparability is defined only within the same intent key.
 - Native profiles are plugin dialects. Mappings are the mandatory bridge between Wanderer intents and provider-specific profiles or options.
-- The frontend speaks exclusively the Wanderer routing API. Provider-specific request and response formats, credentials, and profile formats stay in the plugin layer.
+- The frontend speaks exclusively the Wanderer routing host API. Provider-specific request/response formats, credentials, and protocol details stay in the plugin layer. Provider-specific tuning options may still be exposed through host-mediated advanced controls declared by the plugin.
 - The host owns discovery, user instances, orchestration, parallel fan-out, partial-failure aggregation, policy enforcement, and persistence. Plugins own only the translation into the provider protocol.
 - `route.v1` and `elevation.v1` are independent capabilities. Routing and elevation can come from different plugins.
 - Users can create their own routing profiles, including provider-specific profile files such as BRouter `.brf`.
-- Multiple routing engines can be active for the same user. The route editor can request alternatives from one or more engines.
+- Multiple routing engines can be active for the same user. A user or admin defines a primary routing engine for the default single-route path; additional engines may be selected for comparison, variants, elevation, or advanced workflows.
+- Because the editor is segment-oriented, the host may compose an accepted route from segment candidates produced by different engines, as long as composition happens only at existing anchor boundaries and all segments share the same canonical intent.
 
 ## Permanent boundaries
 
-- No cross-engine route optimization: the host orchestrates independent candidates from multiple engines but does not stitch segments from different engines into one optimized route.
 - No shared native profile language: Wanderer intents map onto native profiles. They do not translate BRouter `.brf` profiles into Valhalla `costing_options` or vice versa.
+- No mid-segment provider stitching: the host may combine complete anchor-pair segments from different engines, but it does not cut provider geometries inside a segment and splice arbitrary sub-segments into a new synthetic path.
 - Plugins get no direct network access. They keep using the existing host requests via declared connectors.
 - Plugins do not persist arbitrary files themselves. User profiles and profile files belong to the host and are passed to plugins only as bounded input.
 
@@ -111,12 +112,15 @@ A routing plugin uses the existing plugin bundle structure:
       "version": "v1",
       "roles": ["route", "elevation"],
       "modes": ["foot", "bike", "motor"],
-      "supportsSegmentGeometry": true,
-      "supportsShapeRanges": false,
+      "supportsViaRouting": true,
       "supportsAlternatives": true,
       "maxAlternatives": 3,
       "supportsRouteElevation": true,
       "supportsElevation": true,
+      "nativeControlDiscovery": {
+        "enabled": true,
+        "scope": "profile"
+      },
       "nativeProfileUpload": {
         "enabled": false
       }
@@ -151,6 +155,7 @@ The host sends normalized, already-resolved routing input to the selected plugin
   "auth": {},
   "config": {},
   "request": {
+    "routingMode": "segment",
     "anchors": [
       { "lat": 47.3769, "lon": 8.5417 },
       { "lat": 47.3850, "lon": 8.5600 }
@@ -178,6 +183,8 @@ The host sends normalized, already-resolved routing input to the selected plugin
   }
 }
 ```
+
+`request.routingMode` tells the plugin how to interpret `anchors`. In `segment` mode, the plugin receives exactly one anchor pair and returns candidates for that point-to-point segment. This is the mandatory `route.v1` baseline. In `via` mode, the plugin should route the full ordered anchor list as one provider request with intermediate via/through points. The host only sends `via` when plugin discovery declares `supportsViaRouting`.
 
 `preferences` are intentionally generic and optional. A plugin maps supported values into its native format and ignores unsupported values. Provider-specific advanced settings belong in native profiles, plugin configuration, or `native_config`, not in the generic API. `profile.nativeConfig` is the delivery path for such resolved provider-specific mapping options, e.g. Valhalla `costing_options` or template parameters for a BRouter profile. `mode` is kept in the plugin input as a convenience and validation aid, even though many plugins can derive it from the resolved profile.
 
@@ -240,19 +247,25 @@ Required:
 | `segment.fromAnchor` / `segment.toAnchor` | Anchor assignment of the segment. |
 | `segment.distance` | Segment distance in meters. |
 | `segment.duration` | Segment duration in seconds. |
-| Segment `geometry` or `shapeRange` | Either own segment polyline or a slice into the candidate polyline. |
+| `segment.geometry` | Segment polyline for the requested anchor pair. |
 
 Optional:
 
 | Field | Meaning |
 | --- | --- |
-| `candidate.geometry` | Full geometry for preview, comparison, and `shapeRange`. |
+| `candidate.geometry` | Full geometry for preview and comparison. |
+| `candidate.snappedAnchors` | Engine-resolved anchor positions (same order/count as the request anchors) when the engine snapped an anchor to the routable network, so the editor can reflect where routing actually started/ended. |
 | `summary.elevationGain` / `summary.elevationLoss` | Elevation metric when the plugin knows usable heights. |
+| `summary.surface` / `summary.wayTypes` | Optional normalized breakdown (e.g. paved/unpaved share, way-type mix). On the roadmap because a programmatic/agent consumer benefits from richer comparable metadata; not required, and only populated when the engine provides it. |
 | `warnings` | Plugin warnings about the candidate or result. |
 
-The mandatory geometry format for plugin output is `encoded_polyline` with `precision: 6`. This format is normatively fixed: it uses the Google Encoded Polyline Algorithm with scaling factor `1e6`. The decoded point list consists of WGS84 pairs in the order `[lat, lon]`, i.e. latitude first and longitude second. This order applies to candidate geometries, segment geometries, `shapeRange` slices, and `elevation.v1` geometries. GeoJSON-style `[lon, lat]` coordinates are not allowed in this field. GPX and GeoJSON are not mandatory output formats for plugins; the host remains the sole GPX authority.
+The mandatory geometry format for plugin output is `encoded_polyline` with `precision: 6`. This format is normatively fixed: it uses the Google Encoded Polyline Algorithm with scaling factor `1e6`. The decoded point list consists of WGS84 pairs in the order `[lat, lon]`, i.e. latitude first and longitude second. This order applies to candidate geometries, segment geometries, and `elevation.v1` geometries. GeoJSON-style `[lon, lat]` coordinates are not allowed in this field. GPX and GeoJSON are not mandatory output formats for plugins; the host remains the sole GPX authority.
 
 The host converts accepted candidates to GPX for the existing editor. The current editor is segment-oriented: each stretch between two adjacent anchor points exists as one `trkseg`, and undo/redo, insert, edit, delete, crop, and anchor reordering operate on these segment indices. A route candidate must therefore preserve the relationship between anchors and segments.
+
+Segment routing provenance is persisted by Wanderer as host-owned trail metadata, not as the canonical GPX representation. The preferred persistence shape is a side record per trail segment, keyed by trail id plus stable segment identity (or segment index plus route revision), containing the routing provenance needed for mismatch detection, details/debug display, and future re-routing. GPX `trkseg` remains the geometry/time/elevation representation for the editor and export; GPX extensions may be used as optional diagnostic/export metadata, but they are not the authoritative source for routing provenance.
+
+Consequently, exported GPX that is later imported again is treated like any other imported route: its routing provenance is `unknown`, it is inert, and unknown provenance alone must not trigger repeated re-route prompts. This avoids coupling Wanderer's internal routing model to GPX extension compatibility across clients.
 
 `geometry` at the candidate level is optional full geometry. It is useful for preview, comparison, and summary. `segments` is the editor-compatible contract and must contain one segment per adjacent anchor pair:
 
@@ -262,24 +275,7 @@ anchors[1] -> anchors[2] = segments[1]
 anchors[n] -> anchors[n+1] = segments[n]
 ```
 
-Each segment should contain its own encoded-polyline geometry, distance, and duration. This is the preferred output form because the host can materialize each segment directly as one GPX `trkseg` and derive per-segment timestamps from `duration`.
-
-If an engine can only return a single optimized full geometry, the plugin may instead provide `shapeRange` per segment:
-
-```json
-{
-  "fromAnchor": 0,
-  "toAnchor": 1,
-  "shapeRange": {
-    "start": 0,
-    "end": 42
-  },
-  "distance": 1234.5,
-  "duration": 987
-}
-```
-
-`shapeRange.start` and `shapeRange.end` are inclusive point indices into the decoded candidate geometry, i.e. into the normalized `[lat, lon]` point list. Segment geometry remains preferred because it avoids ambiguity in host-side slicing of shared boundary points.
+Each segment must contain its own encoded-polyline geometry, distance, and duration. This is required because the host materializes each segment directly as one GPX `trkseg` and derives per-segment timestamps from `duration`. If a provider returns only one optimized full geometry internally, the plugin is responsible for deriving the requested segment geometries before returning `route.v1`. A candidate that cannot provide one geometry-bearing segment per requested adjacent anchor pair is invalid and must be rejected with `candidate_segment_mismatch` or `candidate_geometry_invalid`.
 
 The editor should no longer need to know whether the line came from Valhalla, BRouter, GraphHopper, OSRM, or a host-native straight line.
 
@@ -432,16 +428,23 @@ The provider comparison suggests a layered model:
 
 Wanderer intents are the application's shared routing language. Provider-native profiles are plugin dialects. Mappings are the dictionary between them. For multi-provider routing this is central: BRouter `trekking` and Valhalla `bicycle` are comparable only if Wanderer knows that both map onto the same canonical intent such as `bike_balanced`.
 
-Suggested generic modes:
+Suggested standard generic modes:
 
 | Mode | Meaning |
 | --- | --- |
 | `foot` | Walking, hiking, running, and pedestrian access. |
 | `bike` | Bicycle routing of any kind. |
 | `motor` | Car, motorcycle, scooter, truck, and similar road vehicles. |
+
+Reserved/future extension modes:
+
+| Mode | Meaning |
+| --- | --- |
 | `mixed` | Route deliberately switches between modes. |
 | `transit` | Public-transport-aware routing. |
 | `other` | Special profiles such as skating, rail, river, or diagnostics. |
+
+`mixed`, `transit`, and `other` are not part of the regular Wanderer routing surface. They may be useful for future plugins or diagnostics, but they should not appear as standard user-facing modes until Wanderer defines comparable intents and UI behavior for them.
 
 Suggested standard intents:
 
@@ -582,8 +585,6 @@ Suggested metadata structure:
       "version": "v1",
       "roles": ["route", "elevation"],
       "modes": ["foot", "bike", "motor"],
-      "supportsSegmentGeometry": true,
-      "supportsShapeRanges": false,
       "supportsAlternatives": true,
       "maxAlternatives": 3,
       "supportsRouteElevation": true,
@@ -678,8 +679,8 @@ Field semantics:
 | `version` | Version of the discovery contract, initially `v1`. |
 | `roles` | Roles of the plugin: `route`, `elevation`, or both. |
 | `modes` | Coarse Wanderer modes the plugin can serve. |
-| `supportsSegmentGeometry` | Plugin can return its own segment geometries per anchor pair. |
-| `supportsShapeRanges` | Plugin can return a full shape plus segment index ranges. |
+| `supportsViaRouting` | Plugin can route the full ordered anchor list as one request with via/through points. |
+| `supportsRoundTrip` | Plugin can generate a closed round-trip route from a start point and a target distance. |
 | `supportsAlternatives` | Plugin can return multiple native route candidates. |
 | `maxAlternatives` | Upper bound on reasonable native alternatives per plugin invocation. |
 | `supportsRouteElevation` | `route.v1` may already contain usable heights. |
@@ -687,6 +688,7 @@ Field semantics:
 | `intents` | Plugin-suggested mappings from Wanderer intents to native profiles and preferences. |
 | `nativeProfiles` | Provider-native profiles the host can list and offer to advanced users. |
 | `nativeProfileUpload` | Upload contract for provider-native profile files. |
+| `nativeControlDiscovery` | Describes whether the plugin can expose provider-/profile-specific advanced controls. |
 
 `preferences` describes, per intent, which canonical Wanderer preferences the plugin can meaningfully process. The host uses this data to show UI sliders, check parallel comparison, and classify `unsupported_preference` correctly as a warning or an error.
 
@@ -704,6 +706,30 @@ Support values:
 
 For Valhalla, `nativeProfileUpload.enabled` would be `false`; advanced users would edit provider-specific profile/config fields. For BRouter, upload is a core feature.
 
+### Provider-native advanced controls
+
+Canonical Wanderer preferences are intentionally small and comparable. They are not meant to expose every provider knob. In addition, a routing plugin may expose provider-native advanced controls for the currently selected engine and native profile. These controls are engine-specific, profile-specific, and not comparable across providers.
+
+Advanced controls are discovered, rendered, and stored separately from canonical preferences:
+
+- the plugin describes available native controls for a concrete native profile;
+- the host validates submitted values against the plugin-provided schema;
+- values are stored in `native_config`, generated profile metadata, or a provider-native profile record;
+- the host passes resolved values back to the plugin as `profile.nativeConfig` or profile content during `route.v1`;
+- the standard editor UI never assumes that advanced controls are comparable between engines.
+
+Control schema should be deliberately UI-oriented and bounded. A control can be a boolean, enum, number, slider, text field, grouped object, or file-backed profile parameter. Each control should include key, label, description, type, default, allowed range/options, unit, required flag, and whether changing it mutates `native_config` or requires regenerating a native profile.
+
+Provider expectations:
+
+| Provider | Advanced-control model |
+| --- | --- |
+| Valhalla | Mostly direct: native controls can map to Valhalla `costing_options` and related request options for the selected costing/profile. |
+| BRouter | Profile-centric: controls may come from declared template parameters, generated `.brf` profiles, or parsed metadata/comments in `.brf` files. Raw arbitrary `.brf` editing remains a profile-upload/editing feature, not a generic form. |
+| GraphHopper | Concept validation: likely native controls are profile selection plus Custom Model fields/rules. Exact schema is plugin-specific and should be defined only when a GraphHopper plugin is built. |
+
+BRouter is intentionally less automatic than Valhalla. The plugin may expose advanced controls only for profiles it understands well enough to validate safely, for example first-party templates or `.brf` files with explicit parameter metadata. If a user uploads an arbitrary `.brf` without parseable control metadata, the host can still offer profile selection and file replacement, but should not invent sliders by guessing the profile's cost-function semantics.
+
 ## Host API
 
 The frontend calls exclusively plugin-neutral endpoints:
@@ -711,7 +737,8 @@ The frontend calls exclusively plugin-neutral endpoints:
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/v1/plugins/routing/engines` | List enabled routing plugin instances and their capabilities for the user. |
-| `POST /api/v1/plugins/routing/route` | Request route candidates from one or more routing engines. |
+| `POST /api/v1/plugins/routing/route` | Request a final, curated route response for the human editor UI. |
+| `POST /api/v1/plugins/routing/route-candidates` | Request a broader host-normalized candidate set for advanced, debug, or programmatic/agent consumers. |
 | `POST /api/v1/plugins/routing/elevation` | Correct or add elevation via a selected elevation plugin. |
 | `GET /api/v1/plugins/routing/profiles` | List user profiles and built-in plugin profiles. |
 | `POST /api/v1/plugins/routing/profiles` | Create or upload a user routing profile. |
@@ -721,6 +748,7 @@ The frontend calls exclusively plugin-neutral endpoints:
 | `POST /api/v1/plugins/routing/intents` | Create an admin or user intent. |
 | `GET/PATCH /api/v1/plugins/routing/mappings` | Read or update intent-to-plugin mappings. |
 | `GET/PATCH /api/v1/plugins/routing/settings` | Read or update user routing defaults. |
+| `POST /api/v1/plugins/routing/native-controls` | Resolve provider-native advanced controls for one engine/profile selection. |
 
 ### Discovery, settings, and controls
 
@@ -831,6 +859,78 @@ Response:
 
 The host computes the intersection and comparability of the preferences. `comparable: true` holds only if all selected engines support the preference at least `partial`. `advanced` and `unsupported` do not appear in the standard controls. The frontend renders only the controls the host returns.
 
+Provider-native advanced controls are resolved through a separate endpoint:
+
+```text
+POST /api/v1/plugins/routing/native-controls
+```
+
+Request:
+
+```json
+{
+  "pluginId": "valhalla",
+  "instanceId": "def456",
+  "intent": "bike_balanced",
+  "profileId": "touring_bike",
+  "nativeProfileKey": "bicycle",
+  "nativeConfig": {
+    "bicycle": {
+      "use_roads": 0.5
+    }
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "pluginId": "valhalla",
+  "instanceId": "def456",
+  "profileId": "touring_bike",
+  "groups": [
+    {
+      "key": "bicycle",
+      "label": "Bicycle costing",
+      "controls": [
+        {
+          "key": "bicycle.use_roads",
+          "label": "Use roads",
+          "type": "slider",
+          "valueType": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.5,
+          "current": 0.5,
+          "target": "native_config",
+          "path": ["bicycle", "use_roads"]
+        },
+        {
+          "key": "bicycle.bicycle_type",
+          "label": "Bicycle type",
+          "type": "enum",
+          "valueType": "string",
+          "options": [
+            { "value": "Road", "label": "Road" },
+            { "value": "Hybrid", "label": "Hybrid" },
+            { "value": "Mountain", "label": "Mountain" }
+          ],
+          "default": "Hybrid",
+          "current": "Hybrid",
+          "target": "native_config",
+          "path": ["bicycle", "bicycle_type"]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
+```
+
+The response is provider-native and scoped to one engine/profile. It is not used for standard parallel comparability. In a parallel routing UI, advanced controls are shown per engine, not merged across engines. Submitting values updates the selected mapping/profile's `native_config` or triggers regeneration of a provider-native profile, depending on each control's `target`.
+
 `GET /api/v1/plugins/routing/profiles` returns discovery built-ins and stored user/generated profiles together:
 
 ```json
@@ -923,6 +1023,53 @@ In `parallel` mode the intent deliberately sits at the top level. All selected e
 
 The host may run plugin calls in parallel. Each plugin invocation still uses the existing worker isolation and timeout policy.
 
+Routing modes:
+
+| Mode | Meaning | Engine requirement |
+| --- | --- | --- |
+| `segment` | Host routes each adjacent anchor pair independently. This is Wanderer's default editor behavior and mandatory for `route.v1`. | `route.v1`. |
+| `via` | Host sends the full ordered anchor list to one engine and expects the engine to route through those points in one provider request. | `supportsViaRouting`. |
+
+Initial provider assessment for `via` mode:
+
+| Provider | Via-routing assessment |
+| --- | --- |
+| Valhalla | Likely supported: the route API accepts multiple `locations` and supports location types such as `via`, `through`, and `break_through`. |
+| BRouter | Likely supported, but plugin behavior must be verified against the chosen runtime/API: BRouter documents via-points and BRouter clients commonly route over a list of points. |
+| GraphHopper | Likely supported: the Routing API accepts multiple `point` parameters for a route. |
+
+Because provider semantics differ, `via` mode is not assumed from `route.v1` alone. A plugin must explicitly declare `supportsViaRouting`; otherwise the host uses the mandatory segment-routing baseline.
+
+The routing mode is a user-level choice, not a per-engine opportunistic add-on. Segment and via are mutually exclusive for a given route; a session routes either segment-based or via-based:
+
+- The mode setting is offered only when at least one enabled and configured engine declares `supportsViaRouting`. `segment` is always available; `via` appears only when it can actually run.
+- `default_routing_mode` is stored in `routing_settings` and resolved to an effective mode at request time. If this stored default resolves to `via` but no via-capable engine is currently available or reachable, the host may fall back to `segment` and returns a `routing_mode_fallback` warning so the UI can inform the user.
+- Explicit user choice is stronger than default resolution. If the current request explicitly asks for `via` and no selected via-capable engine can answer, the host must not silently return a segment route. It returns a request-level error (or the UI asks for confirmation before retrying as `segment`). This protects the semantic difference between "route through all anchors as one engine calculation" and "route each anchor pair independently".
+- In `parallel` mode, the chosen routing mode applies to the whole comparison. Under `parallel` + `via`, only via-capable engines participate; non-via engines are not offered for selection in this mode. The host does not silently mix via and segment routing within one parallel request.
+- Cross-engine segment composition exists only in `segment` mode. `via` candidates are atomic per engine and are never composed at anchor boundaries.
+
+Recompute model:
+
+- Routing is recomputed only when the anchor list changes (add, remove, move, or reorder anchors). In `segment` mode the host re-routes only the segments affected by the change; in `via` mode any anchor-list change re-routes the whole ordered list as one request per engine.
+- Intent, profile, engine, and preference changes are allowed at any time during planning. They are go-forward by default: they apply to newly created or explicitly re-routed segments, not retroactively to existing ones. A single route may therefore be heterogeneous, with segments routed under different intents, preferences, engines, or profiles.
+- If existing routed segments differ from the currently active planning settings, the UI may offer a one-time action to re-route the existing segments with the new settings. This is an affordance, not an automatic migration and not a blocker: the user may deliberately keep mixed settings in one route.
+- The host decides whether this re-route affordance is relevant from segment provenance. Trails planned after this concept is introduced must persist enough routing provenance to compare existing segments against the active settings; imported or legacy segments with unknown provenance are not treated as mismatches solely because their origin is unknown.
+- Imported or loaded routes are inert: they are not re-routed and receive no alternatives until an anchor is changed.
+- Each segment keeps its provenance: the intent, routing mode, route engine instance, plugin, native profile, preference hash, native config hash, and optional profile revision in effect when it was created or last re-routed.
+
+### Round-trip routing
+
+Round-trip (loop) generation is a distinct, optional routing operation: instead of routing between user anchors, the host asks an engine for a closed route from a start point and a target distance. It is offered only when at least one enabled engine declares `supportsRoundTrip`.
+
+- Request shape: a start anchor, a target distance, an intent, and optional direction/seed and preferences. There is no ordered anchor list.
+- The engine returns a normal candidate (geometry + summary). Round-trip is a generator, not a permanent route type: when the user accepts the candidate, the host materializes it into the editor as a normal anchored route with synthetic edit anchors and one routed segment per adjacent anchor pair.
+- The host is the authority for materialization. A plugin may provide optional suggested anchors, but the host validates them and may instead derive anchors from geometry. The accepted route keeps the user's start point as the first anchor, treats the loop closure as that same anchor rather than a second duplicate end anchor, and adds bounded synthetic anchors along the loop so the route is editable.
+- Synthetic anchor generation should be bounded and predictable: create enough anchors to make the loop editable, prefer strong geometry changes or engine-suggested points when valid, otherwise distribute anchors by distance, and cap the count so the editor is not flooded.
+- Generated round-trip segments carry normal routing provenance plus round-trip metadata such as `source: "round_trip"`, `anchorType: "synthetic"` for generated anchors, optional `roundTripRequestId`, target distance, direction, and seed. After materialization, normal segment/via routing and the recompute model apply.
+- Round-trip is a separate request type, not a `routingMode`; it does not change how anchored routes are routed.
+
+Round-trip is captured here as an anticipated capability so the contract anticipates it; its own implementation is a separate change (see "Roadmap").
+
 ### Host route request
 
 `POST /api/v1/plugins/routing/route` is the stable contract between frontend and host. From it the host resolves plugin instances, intent mappings, native profiles, and plugin inputs.
@@ -957,6 +1104,7 @@ The host may run plugin calls in parallel. Each plugin invocation still uses the
   "options": {
     "includeElevation": true,
     "desiredVariants": 3,
+    "routingMode": "segment",
     "language": "de"
   }
 }
@@ -983,6 +1131,7 @@ Defaults:
 | --- | --- |
 | `options.includeElevation` | `true`, because current behavior backfills heights and elevation gain/loss is relevant for candidate selection. |
 | `options.desiredVariants` | User setting `default_variant_count`, otherwise `1`. |
+| `options.routingMode` | Effective routing mode for this request. Defaults are resolved from `default_routing_mode`; an automatic fallback from `via` to `segment` is allowed only for default resolution and emits `routing_mode_fallback`. An explicit user request for `via` must fail or be confirmed by the UI before retrying as `segment` when no selected via-capable engine can answer. |
 | `options.language` | User or browser language, otherwise `en`. |
 | `preferences` | Intent/profile defaults from mapping and plugin discovery. |
 | `requiredPreferences` | `[]`. |
@@ -1003,9 +1152,19 @@ Parallel requests have partial-failure semantics. The host returns successful ca
 
 `desiredVariants` applies regardless of mode. In single-engine mode the host translates the desired final variant count into a provider-specific alternatives request to that one engine. In parallel mode it combines alternatives within one engine with multiple engines for the same intent. When aggregating, the host must namespace candidates uniquely, e.g. via `pluginId`, `instanceId`, `profileKey`, and the native candidate ID. Two plugins may both return `"primary"` internally; in the frontend response this must become a stable, host-unique candidate ID.
 
+In `segment` routing mode, `desiredVariants` applies per anchor-pair segment first. The host may show or curate whole-route previews from selected segment choices, but the primary choice unit remains the segment. In `via` routing mode, `desiredVariants` applies to full-route candidates returned by one engine for the ordered anchor list.
+
 The UI should not burden users with "alternatives per engine". Instead it selects the desired final number of visible variants, e.g. `desiredVariants: 3`. The host translates this number into provider-specific requests. It may request up to a small reserve of candidates per engine, bounded by plugin metadata such as `maxAlternatives`, rate limits, and user policy. The final response contains at most `desiredVariants` visible candidates, provided enough usable variants exist.
 
 `desiredVariants` is a target value, not a promise that every request always produces multiple variants. The host may reduce the effective variant count depending on anchor distance, routing context, and rate limits. For very short segments, e.g. a few hundred meters of a bike tour, multiple suggestions are often unhelpful; for long segments or whole tours over many kilometers, variants can add great value. This heuristic belongs to host policy and can later be tuned via user settings or admin limits.
+
+The default Wanderer editor model is segment routing: every adjacent anchor pair is routed as an independent point-to-point request. A trail with anchors A, B, and C therefore produces separate routing decisions for A -> B and B -> C. Variant selection primarily happens at this segment level. Each anchor pair can have candidates from multiple engines, and the accepted trail may use engine A for one segment and engine B for another.
+
+Via routing is a separate, user-selected mode: the host sends the full ordered anchor list to one engine and asks it to route through those points in a single provider request. This can produce globally smoother or more provider-optimized candidates, but it is not the baseline editor behavior and must be gated by `supportsViaRouting`. Segment and via are mutually exclusive for a route; under `parallel` + `via` only via-capable engines participate. If a stored default asks for `via` but no via-capable engine is available, the host may fall back to segment routing with a `routing_mode_fallback` warning. If the current request explicitly asks for `via`, the host must not silently fall back; the request fails or the UI confirms a retry in `segment` mode.
+
+Segment-level cross-engine composition is valid only in `segment` mode and only at anchor boundaries. All selected segment candidates must answer the same canonical Wanderer intent and must preserve the requested `fromAnchor`/`toAnchor` relationship. The host may expose this as a per-segment choice in the editor or use it to assemble a recommended composed candidate. It must keep full per-segment routing provenance so the UI can show how each accepted segment was produced and can later detect whether the segment differs from the active planning settings. The host must not cut a provider geometry in the middle of an anchor-pair segment and splice it with another provider's geometry; composition boundaries are the user's anchors.
+
+Via-route candidates and segment-composed candidates are both valid host candidates, but they are different kinds of candidates. The host must label their composition mode, e.g. `segment_composed` or `via_route`, so the UI can explain whether a candidate came from independent segment choices or from one engine's full via-route calculation.
 
 The selection should not be based purely on maximum deviation. Otherwise exotic detours win just because they are different. The host should first filter out invalid, segment-incompatible, heavily warned, or extremely poor candidates, and then optimize for diversity within a quality corridor:
 
@@ -1017,7 +1176,14 @@ The selection should not be based purely on maximum deviation. Otherwise exotic 
 
 Surface, way-type, or quality breakdowns can be added later as optional normalized candidate metadata. But they should not be silently assumed as a host selector while the route output contract does not provide them.
 
-A possible heuristic: the host first takes the best candidate and then adds candidates that bring enough geometric variance without leaving the quality corridor significantly. This lets BRouter and Valhalla provide genuine alternatives without an intentionally bad route becoming visible just because of high variance.
+A possible heuristic: per segment, the host first takes the best candidate and then adds candidates that bring enough geometric variance without leaving the quality corridor significantly. For whole-route previews, the host can additionally create composed candidates from the best segment choices across engines. This lets BRouter and Valhalla provide genuine alternatives without an intentionally bad route becoming visible just because of high variance.
+
+There are two consumers of candidates, with different needs, and they should use separate host endpoints:
+
+- `POST /api/v1/plugins/routing/route` is the human UI contract. It returns a small, finally curated set (≤ `desiredVariants`) for the editor. The response is suitable for direct display and selection.
+- `POST /api/v1/plugins/routing/route-candidates` is the advanced/programmatic contract. It returns a broader but still bounded, host-normalized comparable candidate set with segment-level provenance and metadata, so debug tools, future agent flows, or advanced UIs can rank, compose, or narrate candidates themselves. Access to this endpoint should be gated by role or `exposed_features`, e.g. `advanced_candidate_access`, because it can amplify fan-out on public instances.
+
+Both endpoints use the same internal routing pipeline and the same plugin contracts. `route-candidates` is not an unfiltered provider dump: it still applies host validation, authorization, limits, timeout/rate policy, intent comparability, geometry normalization, and provenance namespacing. The chat layer itself is out of scope here (a separate later epic that consumes this contract), but Phase 5 is designed to be agent-consumable without inflating the default editor response.
 
 For multi-variant requests, elevation is not computed for all raw candidates, but it is ranking-relevant. When `includeElevation` is set, the host first uses height values a routing engine already provides. If usable heights are missing, the host adds elevation before the final selection for a bounded, already-prefiltered shortlist. This lets elevation gain and loss feed into candidate selection without every raw provider candidate triggering an elevation call. The shortlist size is bounded by host policy, rate limits, and `desiredVariants`.
 
@@ -1034,6 +1200,7 @@ For multi-variant requests, elevation is not computed for all raw candidates, bu
     {
       "id": "cand_brouter_abc123_trekking_primary",
       "label": "BRouter · Trekking",
+      "compositionMode": "segment_single_engine",
       "provider": {
         "pluginId": "brouter",
         "instanceId": "abc123",
@@ -1052,10 +1219,25 @@ For multi-variant requests, elevation is not computed for all raw candidates, bu
         "elevationGain": 120.0,
         "elevationLoss": 118.0
       },
+      "snappedAnchors": [
+        { "lat": 47.37691, "lon": 8.54169 },
+        { "lat": 47.38502, "lon": 8.55998 }
+      ],
       "segments": [
         {
           "fromAnchor": 0,
           "toAnchor": 1,
+          "provenance": {
+            "intentKey": "bike_balanced",
+            "routingMode": "segment",
+            "pluginId": "brouter",
+            "instanceId": "abc123",
+            "profileKey": "trekking",
+            "nativeProfileKey": "trekking",
+            "preferencesHash": "sha256:...",
+            "nativeConfigHash": "sha256:...",
+            "profileRevision": "2026-06-08"
+          },
           "geometry": {
             "format": "encoded_polyline",
             "precision": 6,
@@ -1091,7 +1273,11 @@ Rules:
 
 - `candidates` contains at most `desiredVariants` candidates.
 - `candidate.id` is always generated by the host and is unique and stable within the response.
+- `candidate.compositionMode` identifies how the candidate was assembled: `segment_single_engine`, `segment_composed`, or `via_route`.
 - `provider.nativeCandidateId` is optional and comes from the plugin output.
+- `candidate.snappedAnchors` is optional. When present, it has the same order and count as the request anchors and contains the host-normalized anchor positions after provider/network snapping.
+- Segment-level provenance is required for every accepted or persisted routed segment, and is also returned for composed candidates. When a host candidate is composed from segments produced by different engines, the route-level `provider` describes the composed host candidate, while each segment carries its own producing engine/profile metadata.
+- Unknown provenance is allowed only for imported or legacy segments. Unknown provenance must not by itself trigger repeated re-route prompts; the host prompts only when it can detect a concrete mismatch between segment provenance and the active planning settings.
 - `engineErrors` contains partial failures of individual engines or instances. These errors do not discard successful candidates from other engines.
 - An HTTP error occurs only when the request itself is invalid or no usable candidate could be produced.
 - `warnings` at the response level concern the overall request; `warnings` at the candidate level concern only that candidate.
@@ -1145,6 +1331,8 @@ Suggested codes:
 | `candidate_policy_violation` | Candidate violates host limits, e.g. too many points. | Candidate-fatal |
 | `elevation_failed` | Elevation could not be computed. | Not route-fatal |
 | `elevation_partial` | Elevation is only partially available. | Warning |
+| `routing_mode_fallback` | Stored default resolved to `via`, but `via` was unavailable; the host fell back to `segment` routing. | Warning |
+| `routing_mode_unavailable` | The current request explicitly requires `via`, but no selected via-capable engine can answer. | Request-fatal |
 | `internal_error` | Unexpected host or plugin error. | Engine-fatal |
 
 Error classes:
@@ -1165,7 +1353,7 @@ HTTP status of the host endpoints:
 | `401` | User is not authenticated. |
 | `403` | User is not allowed to use the requested plugin instance, profile, or setting. |
 | `404` | Explicitly referenced resource does not exist in the visible scope, e.g. plugin instance or stored profile. |
-| `422` | Request is formally valid but cannot be resolved semantically, e.g. missing mapping, unsupported intent, a mandatory preference that cannot be supported, or all candidates discarded due to segment/geometry validation. |
+| `422` | Request is formally valid but cannot be resolved semantically, e.g. missing mapping, unsupported intent, explicit `via` routing unavailable (`routing_mode_unavailable`), a mandatory preference that cannot be supported, or all candidates discarded due to segment/geometry validation. |
 | `429` | Host rate limit blocks the request before or during orchestration. |
 | `502` | All selected engines fail with provider/connector/plugin errors without a usable candidate. |
 | `504` | All selected engines exceed the relevant timeouts without a usable candidate. |
@@ -1177,22 +1365,154 @@ For mixed errors without candidates, the host picks the status by the dominant c
 
 Routing settings, intents, mappings, and provider-native profiles are host-owned. Plugins provide discovery and protocol translation but do not persist their own files or user configurations.
 
+### Backend / DB model overview
+
+The routing plugin target state adds host-owned routing collections and one trail-side metadata extension. The exact database names can follow the existing persistence conventions, but the ownership and relationships should be explicit:
+
+```mermaid
+erDiagram
+  USERS ||--o{ ROUTING_SETTINGS : has_user_defaults
+  PLUGIN_INSTANCES ||--o{ ROUTING_SETTINGS : selected_as_route_or_elevation_engine
+  ROUTING_INTENTS ||--o{ ROUTING_SETTINGS : default_or_category_intent
+  TRAIL_CATEGORIES ||--o{ ROUTING_SETTINGS : category_intent_default
+  ROUTING_INTENTS ||--o{ ROUTING_PROFILE_MAPPINGS : mapped_to_provider_profile
+  PLUGIN_INSTANCES ||--o{ ROUTING_PROFILE_MAPPINGS : instance_override
+  ROUTING_PROFILES ||--o{ ROUTING_PROFILE_MAPPINGS : stored_native_profile
+  USERS ||--o{ ROUTING_PROFILES : owns
+  TRAILS ||--o{ ROUTING_SEGMENT_PROVENANCE : has_segment_origin
+
+  ROUTING_SETTINGS {
+    string id
+    string scope
+    string user
+    string primary_route_instance
+    string elevation_instance
+    json compare_instances
+    string default_intent
+    json route_category_intent_defaults
+    string default_routing_mode
+    int default_variant_count
+    json default_preferences
+    json exposed_features
+  }
+
+  ROUTING_INTENTS {
+    string id
+    string scope
+    string user
+    string key
+    string mode
+    string name
+    string description
+    bool enabled
+  }
+
+  TRAIL_CATEGORIES {
+    string id
+    string name
+    bool enabled
+  }
+
+  ROUTING_PROFILE_MAPPINGS {
+    string id
+    string scope
+    string user
+    string intent_key
+    string plugin_id
+    string plugin_instance
+    string native_profile_id
+    string native_profile_key
+    json native_config
+    int priority
+    bool enabled
+  }
+
+  ROUTING_PROFILES {
+    string id
+    string user
+    string plugin_id
+    string name
+    string key
+    string mode
+    string kind
+    string content_type
+    string checksum
+    json metadata
+    bool enabled
+  }
+
+  ROUTING_SEGMENT_PROVENANCE {
+    string trail_id
+    string segment_identity
+    string route_revision
+    string intent_key
+    string routing_mode
+    string plugin_id
+    string instance_id
+    string profile_key
+    string native_profile_key
+    string preferences_hash
+    string native_config_hash
+    string profile_revision
+  }
+```
+
+New host-owned collections:
+
+| Collection | Purpose | Phase |
+| --- | --- | --- |
+| `routing_settings` | Built-in/admin/user defaults, primary/elevation/compare engines, instance-category-to-intent defaults, feature gates. | Phase 3 |
+| `routing_intents` | Canonical Wanderer routing intents and user/admin variants. | Phase 3 |
+| `routing_profile_mappings` | Intent-to-engine/native-profile/native-config mapping. | Phase 3 |
+| `routing_profiles` | Uploaded or generated provider-native profiles owned by the host. | Phase 3 / Phase 4 |
+| `routing_segment_provenance` or equivalent trail-side metadata | Per-segment routing origin for accepted/persisted routed segments. | Phase 5 |
+
+Existing plugin-instance storage remains the source of configured routing engine instances and connector configuration. Existing trails/GPX storage remains the source of route geometry, times, and elevations. Routing provenance is intentionally stored as trail metadata beside the GPX/trail model, not inside GPX as the authoritative representation.
+
 ### `routing_settings`
 
-There is exactly one settings record per user:
+Routing settings exist at three scopes, resolved in order:
 
 ```text
 routing_settings
+  id
+  scope
   user
   primary_route_instance
   elevation_instance
   compare_instances
   default_intent
+  route_category_intent_defaults
+  default_routing_mode
   default_variant_count
   default_preferences
+  exposed_features
 ```
 
-`compare_instances` stores the engines the editor uses for parallel suggestions. `elevation_instance` may be empty; the host then, depending on the request, keeps provider heights, keeps existing GPX heights, or returns geometry without heights. `default_variant_count` is the user default number of visible route suggestions the editor can adopt into `options.desiredVariants`.
+- `scope = "builtin"` for product defaults shipped with Wanderer.
+- `scope = "admin"` for one instance-wide record an admin maintains for new and non-customizing users. `user` is empty.
+- `scope = "user"` for a per-user record; `user` is set. A user has at most one.
+
+The host resolves each field **user → admin → builtin** as a live fallback: a user who has not overridden a field follows the admin default, and if the admin changes it, the change applies immediately to every user who has not customized that field. A new user starts with no user record and therefore routes entirely on the admin (or builtin) defaults — this is what makes routing work out of the box without per-user setup.
+
+Resolution is field-specific:
+
+| Field type | Resolution |
+| --- | --- |
+| Scalar defaults such as `primary_route_instance`, `elevation_instance`, `default_intent`, `default_routing_mode`, and `default_variant_count` | Replace as a whole: the nearest user/admin/builtin value wins. |
+| Selection lists such as `compare_instances` | Replace as a whole: a user list is an explicit selection, not an additive merge. |
+| Preference maps such as `default_preferences` | Deep-merge by key from builtin to admin to user. Each scope overrides only the keys it sets; absent keys continue to inherit. |
+| Category intent maps such as `route_category_intent_defaults` | Deep-merge by actual trail category identity from admin to user. Built-in values may only seed mappings for standard category records that exist in the instance; they must not imply a fixed global category enum. |
+| Feature gates such as `exposed_features` | Admin/builtin define the maximum available feature set. A user may opt into or out of features only within that allowed set and cannot re-enable a feature hidden by admin policy. |
+| Provider-native/default advanced config maps | Deep-merge only inside the resolved engine/profile context and only for supported controls. Unsupported or hidden controls are ignored or rejected by policy. |
+
+`compare_instances` stores the engines the editor uses for parallel suggestions. `elevation_instance` may be empty; the host then, depending on the request, keeps provider heights, keeps existing GPX heights, or returns geometry without heights. `default_variant_count` is the default number of visible route suggestions the editor adopts into `options.desiredVariants`; the product default is `1`.
+
+`route_category_intent_defaults` maps the instance's actual Wanderer trail category records to initial routing intents. The key should be the category identity, preferably category id; category name can be used only as a migration or seed helper when ids are not yet available. Built-in seed suggestions may map existing standard category records such as `Hiking -> hike`, `Walking -> walk`, and `Biking -> bike_balanced`; they apply only if those category records exist in the instance. Standard categories without meaningful path/road routing, e.g. `Climbing`, `Skiing`, or `Canoeing`, should normally have no category mapping. If a category has no mapping, the editor falls back to `default_intent` or starts without auto-routing, depending on host/UI policy. Because categories are admin-configurable records, the effective map is primarily admin/user scoped and remains editable in settings. This mapping is used for trail creation and editing UI only: the selected intent remains visible and editable, and changing it for a trail does not change the category itself.
+
+`default_routing_mode` is `segment` or `via`. It is a preference, not a guarantee: the host resolves the effective mode at request time against the currently available via-capable engines (see "Routing mode"). It may store `via` even when no via-capable engine is currently enabled; the host may then fall back to `segment` because this is default resolution. This automatic fallback does not apply to an explicit per-request user choice of `via`.
+
+`exposed_features` lets an admin gate which optional features are offered instance-wide, e.g. engine selection, parallel comparison, via mode, profile uploads, provider-native advanced controls, and advanced candidate access via `route-candidates`. This serves both usability (keep the default surface small) and abuse control on public instances. A feature hidden by the admin cannot be enabled by a user; segment routing and the single-best-route default path are always available.
 
 `primary_route_profile` is deliberately not stored in user settings. The default runs via `default_intent` plus mapping resolution, so that settings are not directly coupled to provider-native profiles.
 
@@ -1254,6 +1574,7 @@ Semantics:
 - `native_profile_id` references a stored `routing_profiles` record when the mapping points to an uploaded or generated profile.
 - `native_profile_key` references a plugin-declared profile such as `trekking`.
 - `native_config` stores provider-specific option presets such as Valhalla `costing_options`.
+- Provider-native advanced control values are stored in `native_config` when they are request/config options, or in `routing_profiles.metadata` when they belong to generated/native profile materialization.
 - At least one of the fields `native_profile_id`, `native_profile_key`, or `native_config` must be set.
 - `plugin_instance` is optional. When set, the mapping applies only to that concrete plugin instance.
 
@@ -1315,15 +1636,16 @@ The host is responsible for composition:
 2. Request a bounded number of native alternatives per engine, derived from `desiredVariants`, `maxAlternatives`, rate limits, and policy.
 3. Normalize geometry, summaries, and anchor-pair segments.
 4. Validate candidates, namespace them uniquely, and form a bounded shortlist.
-5. If heights were requested and shortlist candidates have no usable heights, add `elevation.v1` for that shortlist.
-6. Curate the shortlist by elevation metric, summary, warnings, and geometry down to at most `desiredVariants` visible variants.
-7. Return candidates with provider metadata to the frontend.
+5. For segment-oriented editing, derive per-anchor-pair candidate sets and optionally compose host candidates from the best segment choices across engines.
+6. If heights were requested and shortlist candidates have no usable heights, add `elevation.v1` for that shortlist.
+7. Curate the shortlist by elevation metric, summary, warnings, and geometry down to at most `desiredVariants` visible variants.
+8. Return candidates with route-level and, where needed, segment-level provider metadata to the frontend.
 
 The host combines candidates from two sources: multiple alternatives from the same engine and multiple engines in parallel mode. The final response to the frontend is a flat candidate list with a unique host ID and provenance (`pluginId`, `instanceId`, `provider`, `profileKey`, optional native candidate ID). This lets the editor select candidates stably even when multiple engines use the same internal candidate name.
 
-The pipeline is activated in phases. Phase 4 already needs single-engine composition with a separate elevation engine: route from BRouter, heights e.g. from Valhalla, validated and normalized by the host. Phase 5 additionally activates multi-engine fan-out, partial-failure aggregation, shortlist formation across multiple engines, and the final diversity curation.
+The pipeline is activated in phases. Phase 4 already needs single-engine composition with a separate elevation engine: route from BRouter, heights e.g. from Valhalla, validated and normalized by the host. Phase 5 additionally activates multi-engine fan-out, partial-failure aggregation, per-segment candidate selection, cross-engine composition at anchor boundaries, shortlist formation across multiple engines, and the final diversity curation.
 
-The host must validate that every returned candidate is traceable to the requested anchor pairs before it hands the result to the frontend. A plugin may route globally over all anchors but must provide either segment geometries or valid `shapeRange` values so the host can materialize the result as one GPX `trkseg` per anchor pair.
+The host must validate that every returned candidate is traceable to the requested anchor pairs before it hands the result to the frontend. A plugin may use via routing over all anchors only when requested by the host, but it must still return one geometry-bearing segment per adjacent anchor pair so the host can materialize the result as one GPX `trkseg` per anchor pair.
 
 Supported setups:
 
@@ -1354,7 +1676,7 @@ Validation cases:
 
 1. Valhalla-only replaces the current state. `hike`, `bike_balanced`, and `car` work via the Valhalla plugin, elevation comes from Valhalla, `pedestrian` migrates to `hike`, and old `/api/v1/valhalla/*` endpoints are removed.
 2. BRouter plus Valhalla elevation works without a special path. Routing uses e.g. BRouter `trekking`, elevation uses Valhalla, `.brf` uploads are possible, and generated `.brf` profiles can be derived from preferences.
-3. Parallel routing with Valhalla and BRouter uses the same Wanderer intent, e.g. `gravel`. `desiredVariants` bounds the visible candidates, the host curates variants, and a partial failure of one engine does not discard other candidates.
+3. Parallel routing with Valhalla and BRouter uses the same Wanderer intent, e.g. `gravel`. `desiredVariants` bounds the visible candidates, the host curates route and segment variants, and a partial failure of one engine does not discard other candidates.
 4. GraphHopper fits as a concept check. Intents can be mapped onto profiles or custom models, preferences can be expressed via custom models or advanced config, and the GraphHopper language does not become the Wanderer standard API.
 5. Host-native straight line remains possible without a routing plugin. Elevation can still be added via `elevation.v1`, and the segment model is preserved.
 
@@ -1369,10 +1691,10 @@ Recommended phases:
 | 1 | `phase-1-routing-plugin-valhalla-cutover` | Valhalla runs as the first `routing` plugin and replaces the old endpoints. | `route.v1`/`elevation.v1` for Valhalla, hard removal of `/api/v1/valhalla/*`, frontend rename from `valhalla_*` to `routing_*`, `pedestrian` -> `hike`, built-in default intents/mappings for `hike`, `bike_balanced`, and `car`, current preferences hard-coded for Valhalla, segment contract and polyline convention as a functional definition of done. | BRouter, parallel variants, user uploads, persistent intent/mapping administration. |
 | 2 | `phase-2-routing-host-contracts` | Host contracts are hardened and made testable. | Host route response, full HTTP status matrix, error codes, elevation status, limits, conformance and edge-case tests for the segment contract and polyline convention. | New providers, complex profile management. |
 | 3 | `phase-3-routing-intents-profiles-mappings` | Default intents, preferences, and mapping resolution become persistent and administrable. | `routing_settings`, `routing_intents`, `routing_profile_mappings`, `routing_profiles`, standard preferences, effective controls; the phase-1 hard-coded defaults are lifted into collections and admin/user resolution. | BRouter-specific `.brf` runtime, multi-engine fan-out. |
-| 4 | `phase-4-routing-plugin-brouter` | BRouter validates the abstraction as a second, structurally different engine. | BRouter `route.v1`, native profiles, `.brf` upload, generated `.brf` profiles from templates, single-engine BRouter routing with a separate elevation engine such as Valhalla. | Automatic cross-engine candidate selection, parallel fan-out. |
-| 5 | `phase-5-routing-parallel-variants` | Multiple engines and multiple variants become comparably usable in the editor. | Parallel fan-out, partial-failure aggregation, `desiredVariants`, distance/context heuristic, candidate shortlist, diversity curation, UI candidate comparison. | Cross-engine stitching and profile-format translation stay excluded. |
+| 4 | `phase-4-routing-plugin-brouter` | BRouter validates the abstraction as a second, structurally different engine. | BRouter `route.v1`, native profiles, `.brf` upload, generated `.brf` profiles from templates, single-engine BRouter routing with a separate elevation engine such as Valhalla. | Automatic cross-engine segment selection, parallel fan-out. |
+| 5 | `phase-5-routing-parallel-variants` | Multiple engines and multiple variants become comparably usable in the editor. | Parallel fan-out, partial-failure aggregation, `desiredVariants`, distance/context heuristic, candidate shortlist, per-segment candidate selection, cross-engine composition at anchor boundaries, diversity curation, UI candidate comparison. | Mid-segment geometry splicing and profile-format translation stay excluded. |
 
-Phases 1 and 2 can be implemented closely together but should be described as separate OSPX changes: Phase 1 is the functional cutover and must already implement the minimum contracts the editor needs. Phase 2 hardens these contracts for all later providers. Phase 3 lifts the phase-1 defaults out of hard-coded Valhalla mappings into persistent, administrable collections. Phase 4 already uses the "routing engine != elevation engine" composition in the single-engine path. Phase 5 only then adds multi-engine fan-out and curated variants.
+Phases 1 and 2 can be implemented closely together but should be described as separate OSPX changes: Phase 1 is the functional cutover and must already implement the minimum contracts the editor needs. Phase 2 hardens these contracts for all later providers. Phase 3 lifts the phase-1 defaults out of hard-coded Valhalla mappings into persistent, administrable collections. Phase 4 already uses the "routing engine != elevation engine" composition in the single-engine path. Phase 5 only then adds multi-engine fan-out, per-segment candidate choice, cross-engine composition at anchor boundaries, and curated variants.
 
 ## Valhalla plugin migration
 
@@ -1444,6 +1766,8 @@ The route editor should initially render the same editing experience. Engine sel
 
 The trail editor speaks exclusively the host API. It knows no Valhalla, BRouter, or GraphHopper request formats. Provider-specific UI is visible only in the advanced area.
 
+The default path is deliberately minimal and Komoot-like: for the active intent the user gets one best route, with no variant, comparison, or engine UI. The engine behind a route is not surfaced. Multi-candidate, engine selection, routing mode, and provider-native options are all opt-in.
+
 Editor state:
 
 ```text
@@ -1451,6 +1775,7 @@ routing_editor_state
   auto_routing_enabled
   intent
   route_engine_mode
+  routing_mode
   primary_route_instance
   compare_instances
   elevation_instance
@@ -1461,23 +1786,28 @@ routing_editor_state
 
 Semantics:
 
-- `route_engine_mode` is `single` or `parallel`.
+- `route_engine_mode` is `single` or `parallel` (how many engines).
+- `routing_mode` is `segment` or `via` (how the anchor list is routed); these two dimensions are orthogonal. `via` is selectable only when at least one enabled engine declares `supportsViaRouting`; otherwise the editor only offers `segment`.
 - `intent` is a canonical Wanderer intent.
 - `desired_variants` is the desired final number of visible candidates; the host may effectively reduce it for short segments or under limits.
 - `selected_candidate_id` references a host-generated candidate ID from the last route response.
 
-Standard controls in the editor:
+Default controls (always visible):
 
 - auto-routing toggle;
 - intent selection;
-- engine mode `single` or `parallel`;
-- primary routing engine;
-- comparison engines for `parallel`;
-- elevation engine;
-- desired variant count;
-- explicit comparison action or automatic comparison request when host policy and segment length make variants seem worthwhile;
-- mode-/intent-dependent preferences;
-- candidate list or map comparison when more than one candidate is returned.
+- mode-/intent-dependent preferences, limited to those resolved as supported for the active engine.
+
+Opt-in / advanced controls (hidden until the user asks for them):
+
+- primary routing engine and elevation engine;
+- engine mode `single` or `parallel` and the comparison engines;
+- routing mode `segment` or `via`, shown only when at least one enabled engine supports via routing;
+- desired variant count and the explicit "show variants" / "compare" action;
+- native profiles, uploads, and provider-native advanced controls;
+- candidate list or map comparison, shown only once more than one candidate was explicitly requested.
+
+By default `desired_variants` is `1` and no variants are requested. Variants and parallel comparison run only on an explicit user action, never automatically as part of the default routing flow.
 
 The host provides effective UI metadata for the current selection of intent and engines. The frontend does not need to compute comparable controls from multiple engines' discovery itself. Raw discovery stays available via `GET /api/v1/plugins/routing/engines`; effective controls can be provided via settings or a resolver endpoint.
 
@@ -1495,9 +1825,10 @@ In parallel routing, the standard UI shows only preferences that all selected en
 
 Candidate display:
 
-- `candidates` from the host response is already finally curated.
+- `candidates` from the host response is already finally curated for the human UI.
 - The UI does not re-sort candidates by provider-specific scores.
-- The UI shows label, provider/profile, distance, duration, elevation gain/loss, warnings, and elevation status.
+- The UI foregrounds an engine-neutral summary: label, distance, duration, elevation gain/loss, warnings, and elevation status. The user does not need to know which engine produced a candidate.
+- Provider/profile provenance — and, for composed candidates, the per-segment engine origin — is internal and shown only in a details/debug view, not in the primary comparison.
 - Accepting a candidate materializes its `segments` as GPX `trkseg`.
 
 A manual straight line stays host- or frontend-native and is not a routing plugin. Elevation can still be corrected via the selected elevation engine.
@@ -1506,7 +1837,9 @@ Advanced UI:
 
 - native profile selection;
 - user upload, e.g. BRouter `.brf`;
+- provider-native advanced controls resolved through `POST /api/v1/plugins/routing/native-controls`;
 - `native_config` and Valhalla advanced costing options;
+- BRouter template/profile parameters when the selected `.brf` or generated profile exposes safe metadata;
 - plugin-specific controls, clearly separated from standard Wanderer preferences.
 
 ## Security and limits
@@ -1567,3 +1900,17 @@ Policy violations use the existing error codes:
 | Profile upload or generated profile is invalid | `profile_invalid` |
 
 Public default instances such as `valhalla1.openstreetmap.de` are subject to fair-use and rate-limit expectations. Parallel routing and variants increase the number of provider requests. The host must therefore be able to enforce conservative defaults per user, plugin instance, and provider.
+
+The `route-candidates` endpoint is an advanced/debug/programmatic surface and can amplify fan-out beyond the normal curated editor response. It should be disabled by default on public instances unless enabled by role or `exposed_features`, and it remains subject to stricter rate limits and candidate-count caps than the normal `route` endpoint.
+
+## Roadmap and open decisions
+
+In scope for this project but deliberately deferred to keep the early phases focused. Each is designed to fit the existing contract as an optional, discovery-gated capability so it does not complicate the default path.
+
+- **Round-trip routing** (`supportsRoundTrip`): contract anticipated above; warrants its own change once at least one engine supports it. Competitiveness feature (loop generation).
+- **Avoid areas / exclusions**: a generic `avoidAreas` preference (polygon or edge), engine-support-gated. Valuable for serious planning but needs significant editor UI (drawing/managing areas), so deferred.
+- **Map-matching of imported routes**: a `match` capability that snaps an imported or freehand track onto the network so it becomes editable/routable. Open decision because it intentionally conflicts with the current "imported routes are inert" rule.
+- **Maneuver / turn instructions (cue sheet)**: optional candidate output for export/navigation prep. Low priority for a planner.
+- **Popularity / scenic routing**: primarily a data and preset concern (popularity data, tuned profiles), not an API gap. Ambition for the curated presets rather than a contract feature.
+
+Out of this project's scope (separate epics): global waypoint/highlight/POI management, an LLM-assisted chat planner (consumes the Phase 5 contract), and the mobile app (developed in parallel). Geocoding/place search for setting anchors already exists in Wanderer.

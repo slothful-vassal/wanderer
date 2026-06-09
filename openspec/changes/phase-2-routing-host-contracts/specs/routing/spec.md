@@ -37,7 +37,7 @@ The system SHALL validate segment structure, polyline convention, limits, and el
 - GIVEN a route request with adjacent anchor pairs
 - WHEN a plugin returns a route candidate
 - THEN the host returns one segment per adjacent anchor pair
-- AND each segment has geometry or a valid shape range.
+- AND each segment has its own geometry.
 
 #### Scenario: Canonical encoded polyline
 - GIVEN a route candidate includes encoded geometry

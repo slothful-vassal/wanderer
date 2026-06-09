@@ -2,11 +2,36 @@
 
 - [ ] Implement parallel route fan-out for multiple engine selections.
 - [ ] Enforce same-intent comparability for parallel routing.
+- [ ] Keep segment routing as the mandatory per-anchor-pair `route.v1` baseline.
+- [ ] Add discovery handling for optional `supportsViaRouting`.
+- [ ] Add `default_routing_mode` (settings) and `routing_mode` (editor state); offer `via` only when at least one enabled engine supports it.
+- [ ] Resolve effective routing mode at request time; allow automatic `via` -> `segment` fallback only for stored defaults and emit `routing_mode_fallback`.
+- [ ] Reject explicit per-request `via` selections with HTTP `422` / `routing_mode_unavailable`, or require UI confirmation before retrying as `segment`, when no selected via-capable engine can answer.
+- [ ] Restrict `parallel` + `via` to via-capable engines; never mix segment and via in one parallel request.
+- [ ] Recompute only on anchor-list changes; treat intent/profile/engine/preference changes as go-forward and imported routes as inert.
 - [ ] Namespace and normalize candidate provenance.
+- [ ] Add backend migrations/schema definitions for trail-side segment routing provenance.
+- [ ] Persist segment provenance for routed segments so the UI can detect concrete mismatches against active planning settings.
+- [ ] Store persisted segment provenance as host-owned trail metadata keyed to trail segments, not as authoritative GPX `trkseg` extensions.
+- [ ] Treat exported-then-reimported GPX as unknown provenance and inert until an anchor changes.
+- [ ] Offer a one-time re-route affordance for existing segments with known mismatching provenance; do not repeatedly prompt for imported or legacy segments with unknown provenance.
 - [ ] Aggregate partial engine failures into `engineErrors`.
 - [ ] Implement bounded native alternatives per engine.
 - [ ] Implement prefiltered shortlist selection.
+- [ ] Add `POST /api/v1/plugins/routing/route-candidates` for broader bounded advanced/debug/programmatic candidate sets.
+- [ ] Gate `route-candidates` by role or `exposed_features` and apply stricter rate/candidate limits than the normal `route` endpoint.
+- [ ] Keep `POST /api/v1/plugins/routing/route` as the final curated human UI endpoint capped by `desiredVariants`.
+- [ ] Build per-anchor-pair candidate sets from parallel engine results.
+- [ ] Implement segment-level engine choice at existing anchor boundaries.
+- [ ] Implement composed host candidates from selected segment candidates.
+- [ ] Preserve segment-level provider/profile provenance for composed candidates.
+- [ ] Validate composed candidate continuity at anchors.
+- [ ] Label candidate composition mode as `segment_single_engine`, `segment_composed`, or `via_route`.
+- [ ] Investigate and verify via-routing behavior for Valhalla, BRouter, and GraphHopper plugin adapters.
 - [ ] Apply elevation to shortlist candidates when needed for ranking.
 - [ ] Implement final diversity and quality curation up to `desiredVariants`.
+- [ ] Default `desiredVariants` to `1`; trigger variants/parallel only on explicit user action.
+- [ ] Present candidates engine-neutrally; keep provider/profile provenance to a details view.
 - [ ] Add UI support for candidate comparison and selection.
-- [ ] Add rate-limit and short-segment variant-reduction tests.
+- [ ] Add UI support for per-segment variant choice where applicable.
+- [ ] Add rate-limit, short-segment variant-reduction, and cross-engine segment-composition tests.

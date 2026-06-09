@@ -1,12 +1,23 @@
 # Tasks: routing-intents-profiles-mappings
 
-- [ ] Add `routing_settings` persistence.
+- [ ] Add `routing_settings` persistence with `scope` (`builtin`/`admin`/`user`) and `exposed_features`.
+- [ ] Add backend migrations/schema definitions for `routing_settings`, `routing_intents`, `routing_profile_mappings`, and `routing_profiles`.
+- [ ] Implement user-over-admin-over-builtin settings resolution (live fallback).
+- [ ] Implement field-specific settings resolution: scalar replace, selection-list replace, preference-map deep merge, feature gates as admin/builtin upper bounds.
+- [ ] Add user/admin `route_category_intent_defaults` keyed by actual trail category identity so categories initialize the routing intent while remaining editable in the UI.
+- [ ] Seed built-in category-to-intent defaults only for standard category records that exist in the instance.
+- [ ] Leave non-routeable standard categories such as Climbing, Skiing, and Canoeing unmapped by default and handle them via `default_intent` or no auto-routing according to UI policy.
+- [ ] Add admin UI/endpoint for instance-wide defaults and feature gating.
 - [ ] Add `routing_intents` persistence.
 - [ ] Add `routing_profile_mappings` persistence.
 - [ ] Add `routing_profiles` persistence.
+- [ ] Document collection relationships and indexes for settings, intents, mappings, profiles, plugin instances, and users.
 - [ ] Implement mapping resolution order.
 - [ ] Implement profile listing from discovery plus materialized profiles.
 - [ ] Implement standard preference support resolution.
 - [ ] Implement effective controls resolver.
+- [ ] Implement provider-native advanced controls resolver.
+- [ ] Persist native advanced option values in `native_config` or generated profile metadata.
+- [ ] Keep standard controls and provider-native advanced controls separate in API responses.
 - [ ] Migrate phase-one hard-coded defaults into persisted/admin-visible defaults.
-- [ ] Add tests for user/admin/plugin mapping precedence.
+- [ ] Add tests for user/admin/plugin mapping precedence and settings merge semantics.
