@@ -1,4 +1,4 @@
-# Change: routing-parallel-variants
+# Change: routing-phase-5-parallel-variants
 
 > **Phase 5 of 5** · depends on: Phase 4 (needs ≥2 engines) · Parallel fan-out + variant curation for the same intent.
 

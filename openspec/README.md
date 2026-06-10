@@ -11,16 +11,16 @@ The routing plugin target architecture is documented in `design/routing-plugin.m
 
 ## Routing phases
 
-Change names are prefixed with `phase-N-` so the phase is visible in the name itself and `openspec list --sort name` returns them in implementation order. The same mapping is mirrored as a marker line at the top of each `proposal.md`. Implement in this order:
+Change names are prefixed with the capability and phase as `<capability>-phase-N-` so changes group by project and `openspec list --sort name` returns a project's phases together in implementation order. The same mapping is mirrored as a marker line at the top of each `proposal.md`. Implement in this order:
 
 | Phase | Change | Depends on |
 | --- | --- | --- |
-| 1 | `phase-1-routing-plugin-valhalla-cutover` | – (cutover) |
-| 2 | `phase-2-routing-host-contracts` | Phase 1 |
-| 3 | `phase-3-routing-intents-profiles-mappings` | Phase 1 |
-| 4 | `phase-4-routing-plugin-brouter` | Phase 3 |
-| 5 | `phase-5-routing-parallel-variants` | Phase 4 (needs ≥2 engines) |
-| 6 (optional add-on) | `phase-6-routing-round-trip` | an engine with `supportsRoundTrip` (after Phase 4) |
+| 1 | `routing-phase-1-plugin-valhalla-cutover` | – (cutover) |
+| 2 | `routing-phase-2-host-contracts` | Phase 1 |
+| 3 | `routing-phase-3-intents-profiles-mappings` | Phase 1 |
+| 4 | `routing-phase-4-plugin-brouter` | Phase 3 |
+| 5 | `routing-phase-5-parallel-variants` | Phase 4 (needs ≥2 engines) |
+| 6 (optional add-on) | `routing-phase-6-round-trip` | an engine with `supportsRoundTrip` (after Phase 4) |
 
 Phase 6 is an optional additive capability (round-trip / loop generation), not part of the linear 1–5 core sequence; it can land whenever a supporting engine is available.
 
