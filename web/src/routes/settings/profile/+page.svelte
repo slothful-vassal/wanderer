@@ -7,9 +7,13 @@
     import { settings_update } from "$lib/stores/settings_store";
     import { show_toast } from "$lib/stores/toast_store.svelte.js";
     import { currentUser, users_update } from "$lib/stores/user_store";
+    import {
+        designSelectableCategories,
+        displayCategoryName,
+    } from "$lib/util/category_util";
     import { getFileURL } from "$lib/util/file_util";
     import { untrack } from "svelte";
-    import { _ } from "svelte-i18n";
+    import { _, locale } from "svelte-i18n";
 
     let { data } = $props();
 
@@ -22,8 +26,14 @@
     let bio = $state(untrack(() => data.settings?.bio ?? ""));
 
     let categoryItems: SelectItem[] = $derived.by(() =>
-        data.categories.map((c: Category) => ({
-            text: $_(c.name),
+        designSelectableCategories(
+            data.categories,
+            data.categoryPreferences,
+            $locale,
+            $_,
+            selectedCategory,
+        ).map((c: Category) => ({
+            text: displayCategoryName(c, $locale, $_),
             value: c.id,
         })),
     );
